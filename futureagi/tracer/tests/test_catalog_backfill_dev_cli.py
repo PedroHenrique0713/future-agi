@@ -265,16 +265,22 @@ def test_direct_script_help_runs_without_django_or_clickhouse_connect() -> None:
     assert "Traceback" not in result.stderr
 
 
-def test_flat_four_file_bundle_runs_without_repository_package_init(tmp_path) -> None:
+def test_flat_five_file_bundle_runs_without_repository_package_init(tmp_path) -> None:
     source_dir = Path(__file__).resolve().parents[1] / "services/clickhouse/v2"
-    names = (
-        "catalog_backfill_dev_cli.py",
-        "attribute_catalog_backfill.py",
-        "attribute_catalog_builder.py",
-        "attribute_catalog_codec.py",
+    sources = {
+        name: source_dir / name
+        for name in (
+            "catalog_backfill_dev_cli.py",
+            "attribute_catalog_backfill.py",
+            "attribute_catalog_builder.py",
+            "attribute_catalog_codec.py",
+        )
+    }
+    sources["attribute_suggestion_contract.py"] = (
+        Path(__file__).resolve().parents[1] / "utils/attribute_suggestion_contract.py"
     )
-    for name in names:
-        shutil.copy2(source_dir / name, tmp_path / name)
+    for name, source in sources.items():
+        shutil.copy2(source, tmp_path / name)
     result = subprocess.run(
         [sys.executable, str(tmp_path / "catalog_backfill_dev_cli.py"), "--help"],
         cwd=tmp_path,

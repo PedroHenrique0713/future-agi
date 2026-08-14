@@ -108,13 +108,18 @@ def test_shadow_is_off_by_default_and_does_not_construct_a_reader(monkeypatch):
     SPAN_ATTRIBUTE_CATALOG_READ_MODE="shadow",
     SPAN_ATTRIBUTE_CATALOG_EPOCH=7,
 )
-def test_reader_global_source_fence_stays_closed_without_clickhouse(monkeypatch):
+def test_shadow_qualification_fails_closed_when_activation_is_missing(monkeypatch):
+    calls = 0
+
+    def execute(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(data=[])
+
     monkeypatch.setattr(
         shadow._LazyV2CatalogExecutor,
         "execute",
-        lambda *_args, **_kwargs: pytest.fail(
-            "closed source fence must not open a ClickHouse client"
-        ),
+        execute,
     )
 
     observed = shadow.run_catalog_key_shadow(
@@ -126,7 +131,8 @@ def test_reader_global_source_fence_stays_closed_without_clickhouse(monkeypatch)
 
     assert observed is not None
     assert observed.outcome == "unavailable"
-    assert observed.reason == "activation_requires_contiguous_source_fence"
+    assert observed.reason == "activation_missing"
+    assert calls == 1
 
 
 @pytest.mark.unit

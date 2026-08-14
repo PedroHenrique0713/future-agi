@@ -25,6 +25,7 @@ Safety properties:
 from __future__ import annotations
 
 import json
+import math
 import queue
 import re
 import threading
@@ -43,11 +44,16 @@ from tracer.services.clickhouse.v2.attribute_catalog_builder import (
     GAP_MAX_ARRAY_MEMBERS,
     GAP_MAX_ENCODED_BYTES,
     GAP_MAX_KEYS,
+    AttributeType,
     CatalogBuildLimits,
     CatalogKeyRow,
     CatalogScope,
     CatalogValueRow,
     build_catalog_rows,
+)
+from tracer.utils.attribute_suggestion_contract import (
+    JSON_ARRAY_STRING_SUGGESTION_MAX_UTF8_BYTES,
+    TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES,
 )
 
 CATALOG_BACKFILL_ACK = "TH7247_DEV_CATALOG_BACKFILL"
@@ -61,14 +67,14 @@ CATALOG_BACKFILL_WRITE_TABLES = frozenset((KEY_TABLE, VALUE_TABLE, CHECKPOINT_TA
 
 MAX_CLICKHOUSE_CALL_SECONDS = 10.0
 CLICKHOUSE_SERVER_MAX_EXECUTION_SECONDS = 8
-CLICKHOUSE_MAX_THREADS = 2
-CLICKHOUSE_MAX_MEMORY_BYTES = 256 * 1024 * 1024
+CLICKHOUSE_MAX_THREADS = 1
+CLICKHOUSE_MAX_MEMORY_BYTES = 768 * 1024 * 1024
 CLICKHOUSE_MAX_BYTES_TO_READ = 512 * 1024 * 1024
 CLICKHOUSE_MAX_ROWS_TO_READ = 1_000_000
 CLICKHOUSE_MAX_RANGE_ROWS_TO_READ = 10_000_000
 CLICKHOUSE_MAX_RESULT_BYTES = 128 * 1024 * 1024
 
-DEFAULT_PAGE_ROWS = 128
+DEFAULT_PAGE_ROWS = 8
 MAX_PAGE_ROWS = 256
 DEFAULT_MAX_WINDOWS = 24
 MAX_WINDOWS = 366 * 24
@@ -76,26 +82,36 @@ DEFAULT_MAX_RUNTIME_SECONDS = 55 * 60
 MAX_RUNTIME_SECONDS = 115 * 60
 DEFAULT_SOURCE_ATTRIBUTE_ENTRIES = 1_024
 MAX_SOURCE_ATTRIBUTE_ENTRIES = 2_048
-DEFAULT_SOURCE_ATTRIBUTE_BYTES = 256 * 1024
-MAX_SOURCE_ATTRIBUTE_BYTES = 512 * 1024
+DEFAULT_SOURCE_ATTRIBUTE_BYTES = 4 * 1024 * 1024
+MAX_SOURCE_ATTRIBUTE_BYTES = 8 * 1024 * 1024
 MAX_WORKER_ID_BYTES = 128
 MAX_ERROR_BYTES = 2_048
 MAX_DATABASE_NAME_BYTES = 128
 
 # Keep historical construction byte-identical to the collector defaults.
 CATALOG_BUILD_LIMITS = CatalogBuildLimits(
-    max_keys=128,
-    max_array_members=256,
-    max_encoded_bytes=64 * 1024,
+    max_keys=1_024,
+    max_array_members=8_192,
+    max_encoded_bytes=8 * 1024 * 1024,
 )
+
+# Typed-map strings remain filterable at every size, but both picker paths
+# deliberately suggest only values through 16 KiB and retain larger keys as
+# key-only. JSON array strings separately mirror the public picker's exact
+# 4 KiB UTF-8 cap; larger array strings are unselectable and are omitted.
+PROJECTED_TYPED_STRING_VALUE_BYTES = TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES
+PROJECTED_ARRAY_STRING_VALUE_BYTES = JSON_ARRAY_STRING_SUGGESTION_MAX_UTF8_BYTES
+PROJECTED_VALUE_BUDGET_BYTES = 1 * 1024 * 1024
 
 GAP_SOURCE_ATTRIBUTE_ENTRIES = "source_attribute_entries"
 GAP_SOURCE_ATTRIBUTE_BYTES = "source_attribute_bytes"
+GAP_SELECTABLE_VALUE_PROJECTION = "selectable_value_projection"
 GAP_INVALID_SOURCE_MAPS = "invalid_source_maps"
 GAP_INVALID_ATTRIBUTES_EXTRA = "invalid_attributes_extra"
 _SOURCE_GAP_ORDER = (
     GAP_SOURCE_ATTRIBUTE_ENTRIES,
     GAP_SOURCE_ATTRIBUTE_BYTES,
+    GAP_SELECTABLE_VALUE_PROJECTION,
     GAP_INVALID_SOURCE_MAPS,
     GAP_INVALID_ATTRIBUTES_EXTRA,
 )
@@ -274,6 +290,7 @@ class SourceSpan:
     attrs_number: Mapping[str, int | float | Decimal]
     attrs_bool: Mapping[str, int]
     attributes_extra: Mapping[str, Any]
+    key_only_attributes: frozenset[tuple[str, AttributeType]] = frozenset()
     gap_reasons: tuple[str, ...] = ()
 
 
@@ -367,55 +384,198 @@ LIMIT %(catalog_source_limit)s
 
 
 _SOURCE_PAYLOAD_SQL_TEMPLATE = """
-WITH latest_rows AS
+WITH projected_rows AS
 (
     SELECT
-        toString(observation_type) AS observation_type,
-        toString(service_name) AS service_name,
-        trace_id,
-        id AS span_id,
-        argMax(start_time, _version) AS seen_at,
-        argMax(attrs_string, _version) AS latest_attrs_string,
-        argMax(attrs_number, _version) AS latest_attrs_number,
-        argMax(attrs_bool, _version) AS latest_attrs_bool,
-        argMax(tuple(attributes_extra), _version).1 AS latest_attributes_extra
-    FROM {source_table}
-    PREWHERE project_id = toUUID(%(catalog_project_id)s)
-      AND start_time >= %(catalog_window_start)s
-      AND start_time < %(catalog_window_end)s
-      AND _version <= %(catalog_source_version_fence)s
+        toString(sp.observation_type) AS observation_type_text,
+        toString(sp.service_name) AS service_name_text,
+        sp.trace_id AS trace_id,
+        sp.id AS span_id,
+        sp.start_time AS seen_at,
+        sp._version AS source_version,
+        sp.is_deleted AS is_deleted,
+        arraySum(
+            value -> if(
+                notEmpty(value)
+                AND length(value)
+                    <= %(catalog_projected_typed_string_value_bytes)s,
+                length(value),
+                0
+            ),
+            mapValues(sp.attrs_string)
+        ) AS projected_string_value_bytes,
+        projected_string_value_bytes
+            <= %(catalog_projected_value_budget_bytes)s
+            AS projected_string_values_complete,
+        arrayMap(
+            (key, value) -> tuple(
+                key,
+                toUInt8(
+                    empty(value)
+                    OR length(value)
+                        > %(catalog_projected_typed_string_value_bytes)s
+                    OR NOT projected_string_values_complete
+                ),
+                if(
+                    notEmpty(value)
+                    AND length(value)
+                        <= %(catalog_projected_typed_string_value_bytes)s
+                    AND projected_string_values_complete,
+                    value,
+                    ''
+                )
+            ),
+            mapKeys(sp.attrs_string),
+            mapValues(sp.attrs_string)
+        ) AS projected_attrs_string,
+        sp.attrs_number AS projected_attrs_number,
+        sp.attrs_bool AS projected_attrs_bool,
+        isValidJSON(sp.attributes_extra)
+            AND toString(JSONType(sp.attributes_extra)) = 'Object'
+            AS attributes_extra_valid,
+        if(
+            attributes_extra_valid,
+            JSONExtractKeysAndValuesRaw(sp.attributes_extra),
+            CAST([], 'Array(Tuple(String, String))')
+        ) AS extra_key_values,
+        arrayMap(
+            item -> tuple(
+                tupleElement(item, 1),
+                toString(JSONType(tupleElement(item, 2))),
+                arrayFilter(
+                    member ->
+                        (
+                            toString(JSONType(member)) = 'String'
+                            AND notEmpty(JSONExtractString(member))
+                            AND length(JSONExtractString(member))
+                                <= %(catalog_projected_array_string_value_bytes)s
+                        )
+                        OR toString(JSONType(member)) IN ('Int64', 'UInt64', 'Bool')
+                        OR (
+                            toString(JSONType(member)) = 'Float64'
+                            AND isFinite(JSONExtractFloat(member))
+                        ),
+                    if(
+                        toString(JSONType(tupleElement(item, 2))) = 'Array',
+                        JSONExtractArrayRaw(tupleElement(item, 2)),
+                        CAST([], 'Array(String)')
+                    )
+                )
+            ),
+            extra_key_values
+        ) AS projected_extra_candidates,
+        arraySum(
+            item -> if(
+                tupleElement(item, 2) = 'Array',
+                length(tupleElement(item, 3)),
+                0
+            ),
+            projected_extra_candidates
+        ) AS projected_array_members,
+        arraySum(
+            item -> if(
+                tupleElement(item, 2) = 'Array',
+                arraySum(
+                    member -> length(member),
+                    tupleElement(item, 3)
+                ),
+                0
+            ),
+            projected_extra_candidates
+        ) AS projected_array_value_bytes,
+        projected_array_members <= %(catalog_projected_array_members)s
+            AND projected_array_value_bytes
+                <= %(catalog_projected_value_budget_bytes)s
+            AS projected_array_values_fit,
+        arrayMap(
+            item -> tuple(
+                tupleElement(item, 1),
+                tupleElement(item, 2),
+                toUInt8(
+                    tupleElement(item, 2) != 'Array'
+                    OR NOT projected_array_values_fit
+                ),
+                if(
+                    tupleElement(item, 2) = 'Array'
+                    AND projected_array_values_fit,
+                    tupleElement(item, 3),
+                    CAST([], 'Array(String)')
+                )
+            ),
+            projected_extra_candidates
+        ) AS projected_attributes_extra,
+        projected_string_values_complete AND projected_array_values_fit
+            AS selectable_projection_complete
+    FROM {source_table} AS sp
+    PREWHERE sp.project_id = toUUID(%(catalog_project_id)s)
+      AND sp.start_time >= %(catalog_window_start)s
+      AND sp.start_time < %(catalog_window_end)s
+      AND sp._version <= %(catalog_source_version_fence)s
       AND tuple(
-        toString(observation_type),
-        toString(service_name),
-        trace_id,
-        id
+        toString(sp.observation_type),
+        toString(sp.service_name),
+        sp.trace_id,
+        sp.id
     ) IN %(catalog_source_identities)s
-    GROUP BY
-        observation_type,
-        service_name,
-        toStartOfHour(start_time),
+), latest_rows AS
+(
+    SELECT
+        observation_type_text,
+        service_name_text,
         trace_id,
-        id
-    HAVING argMax(is_deleted, _version) = 0
+        span_id,
+        argMax(
+            tuple(
+                seen_at,
+                projected_attrs_string,
+                projected_attrs_number,
+                projected_attrs_bool,
+                projected_attributes_extra,
+                attributes_extra_valid,
+                selectable_projection_complete
+            ),
+            source_version
+        ) AS latest_state
+    FROM projected_rows
+    GROUP BY
+        observation_type_text,
+        service_name_text,
+        trace_id,
+        span_id
+    HAVING argMax(is_deleted, source_version) = 0
     ORDER BY
-        observation_type ASC,
-        service_name ASC,
+        observation_type_text ASC,
+        service_name_text ASC,
         trace_id ASC,
         span_id ASC
 ), measured_rows AS
 (
     SELECT
-        *,
-        length(mapKeys(latest_attrs_string))
-          + length(mapKeys(latest_attrs_number))
-          + length(mapKeys(latest_attrs_bool)) AS source_attribute_entries,
-        arraySum(item -> length(item), mapKeys(latest_attrs_string))
-          + arraySum(item -> length(item), mapValues(latest_attrs_string))
-          + arraySum(item -> length(item), mapKeys(latest_attrs_number))
-          + (8 * length(mapKeys(latest_attrs_number)))
-          + arraySum(item -> length(item), mapKeys(latest_attrs_bool))
-          + length(mapKeys(latest_attrs_bool))
-          + length(latest_attributes_extra) AS source_attribute_bytes
+        observation_type_text AS observation_type,
+        service_name_text AS service_name,
+        trace_id,
+        span_id,
+        tupleElement(latest_state, 1) AS seen_at,
+        tupleElement(latest_state, 2) AS attrs_string_projection,
+        tupleElement(latest_state, 3) AS attrs_number,
+        tupleElement(latest_state, 4) AS attrs_bool,
+        tupleElement(latest_state, 5) AS attributes_extra_projection,
+        tupleElement(latest_state, 6) AS attributes_extra_valid,
+        tupleElement(latest_state, 7) AS selectable_projection_complete,
+        length(attrs_string_projection)
+          + length(mapKeys(attrs_number))
+          + length(mapKeys(attrs_bool))
+          + length(attributes_extra_projection) AS source_attribute_entries,
+        length(
+            toJSONString(
+                tuple(
+                    attrs_string_projection,
+                    attrs_number,
+                    attrs_bool,
+                    attributes_extra_projection
+                )
+            )
+        ) AS source_attribute_bytes
     FROM latest_rows
 )
 SELECT
@@ -426,30 +586,12 @@ SELECT
     seen_at,
     source_attribute_entries,
     source_attribute_bytes,
-    if(
-        source_attribute_entries <= %(catalog_max_source_attribute_entries)s
-        AND source_attribute_bytes <= %(catalog_max_source_attribute_bytes)s,
-        latest_attrs_string,
-        CAST(map(), 'Map(String, String)')
-    ) AS attrs_string,
-    if(
-        source_attribute_entries <= %(catalog_max_source_attribute_entries)s
-        AND source_attribute_bytes <= %(catalog_max_source_attribute_bytes)s,
-        latest_attrs_number,
-        CAST(map(), 'Map(String, Float64)')
-    ) AS attrs_number,
-    if(
-        source_attribute_entries <= %(catalog_max_source_attribute_entries)s
-        AND source_attribute_bytes <= %(catalog_max_source_attribute_bytes)s,
-        latest_attrs_bool,
-        CAST(map(), 'Map(String, UInt8)')
-    ) AS attrs_bool,
-    if(
-        source_attribute_entries <= %(catalog_max_source_attribute_entries)s
-        AND source_attribute_bytes <= %(catalog_max_source_attribute_bytes)s,
-        latest_attributes_extra,
-        '{{}}'
-    ) AS attributes_extra
+    attrs_string_projection,
+    attrs_number,
+    attrs_bool,
+    attributes_extra_projection,
+    attributes_extra_valid,
+    selectable_projection_complete
 FROM measured_rows
 ORDER BY
     observation_type ASC,
@@ -652,6 +794,8 @@ READ_SETTINGS: dict[str, Any] = {
     "max_execution_time": CLICKHOUSE_SERVER_MAX_EXECUTION_SECONDS,
     "timeout_overflow_mode": "throw",
     "max_threads": CLICKHOUSE_MAX_THREADS,
+    "max_block_size": 1,
+    "preferred_block_size_bytes": 1 * 1024 * 1024,
     "max_memory_usage": CLICKHOUSE_MAX_MEMORY_BYTES,
     "max_bytes_to_read": CLICKHOUSE_MAX_BYTES_TO_READ,
     "read_overflow_mode": "throw",
@@ -1027,6 +1171,7 @@ class CatalogAttributeBackfillRunner:
                             attrs_bool=source_row.attrs_bool,
                             attributes_extra=source_row.attributes_extra,
                             limits=CATALOG_BUILD_LIMITS,
+                            key_only_attributes=source_row.key_only_attributes,
                         )
                         key_rows.extend(result.key_rows)
                         value_rows.extend(result.value_rows)
@@ -1273,6 +1418,16 @@ class CatalogAttributeBackfillRunner:
                 "catalog_source_identities": tuple(
                     item.as_tuple() for item in page_identities
                 ),
+                "catalog_projected_typed_string_value_bytes": (
+                    PROJECTED_TYPED_STRING_VALUE_BYTES
+                ),
+                "catalog_projected_array_string_value_bytes": (
+                    PROJECTED_ARRAY_STRING_VALUE_BYTES
+                ),
+                "catalog_projected_value_budget_bytes": (PROJECTED_VALUE_BUDGET_BYTES),
+                "catalog_projected_array_members": (
+                    CATALOG_BUILD_LIMITS.max_array_members
+                ),
                 "catalog_max_source_attribute_entries": (
                     self.config.max_source_attribute_entries
                 ),
@@ -1454,32 +1609,48 @@ def _parse_source_row(
     if source_bytes > config.max_source_attribute_bytes:
         reasons.add(GAP_SOURCE_ATTRIBUTE_BYTES)
 
-    attrs_string = row.get("attrs_string")
-    attrs_number = row.get("attrs_number")
-    attrs_bool = row.get("attrs_bool")
-    if not all(
-        isinstance(item, Mapping) for item in (attrs_string, attrs_number, attrs_bool)
-    ):
-        reasons.add(GAP_INVALID_SOURCE_MAPS)
-        attrs_string = attrs_number = attrs_bool = {}
+    if "attrs_string_projection" in row or "attributes_extra_projection" in row:
+        (
+            attrs_string,
+            attrs_number,
+            attrs_bool,
+            extra,
+            key_only_attributes,
+            projection_reasons,
+        ) = _parse_projected_source_attributes(row)
+        reasons.update(projection_reasons)
+    else:
+        attrs_string = row.get("attrs_string")
+        attrs_number = row.get("attrs_number")
+        attrs_bool = row.get("attrs_bool")
+        if not all(
+            isinstance(item, Mapping)
+            for item in (attrs_string, attrs_number, attrs_bool)
+        ):
+            reasons.add(GAP_INVALID_SOURCE_MAPS)
+            attrs_string = attrs_number = attrs_bool = {}
 
-    extra_raw = row.get("attributes_extra")
-    try:
-        if isinstance(extra_raw, str):
-            extra = json.loads(extra_raw)
-        else:
-            extra = extra_raw
-        if not isinstance(extra, Mapping):
-            raise TypeError("attributes_extra must decode to an object")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        reasons.add(GAP_INVALID_ATTRIBUTES_EXTRA)
-        extra = {}
+        extra_raw = row.get("attributes_extra")
+        try:
+            if isinstance(extra_raw, str):
+                extra = json.loads(extra_raw)
+            else:
+                extra = extra_raw
+            if not isinstance(extra, Mapping):
+                raise TypeError("attributes_extra must decode to an object")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            reasons.add(GAP_INVALID_ATTRIBUTES_EXTRA)
+            extra = {}
+        key_only_attributes = frozenset()
 
-    # The SQL replaces over-cap maps with empty values. Never attempt to build
-    # a partial row; its declared source gap is the only safe representation.
+    # Never build a row whose bounded projection itself exceeded a declared
+    # source cap. Explicit key-only flags are complete only for values that the
+    # authoritative picker also suppresses; selectable omissions carry the
+    # durable projection gap above and therefore skip the builder as well.
     if GAP_SOURCE_ATTRIBUTE_ENTRIES in reasons or GAP_SOURCE_ATTRIBUTE_BYTES in reasons:
         attrs_string = attrs_number = attrs_bool = {}
         extra = {}
+        key_only_attributes = frozenset()
 
     return SourceSpan(
         cursor=cursor,
@@ -1488,8 +1659,227 @@ def _parse_source_row(
         attrs_number=attrs_number,  # type: ignore[arg-type]
         attrs_bool=attrs_bool,  # type: ignore[arg-type]
         attributes_extra=extra,
+        key_only_attributes=key_only_attributes,
         gap_reasons=_ordered_gap_reasons(reasons),
     )
+
+
+def _parse_projected_source_attributes(
+    row: Mapping[str, Any],
+) -> tuple[
+    Mapping[str, str],
+    Mapping[str, int | float | Decimal],
+    Mapping[str, int],
+    Mapping[str, Any],
+    frozenset[tuple[str, AttributeType]],
+    set[str],
+]:
+    """Decode the bounded CH projection without recreating raw JSON objects.
+
+    Empty typed strings, non-finite typed numbers, non-selectable array members,
+    nested objects, and top-level JSON scalars become key-only or are omitted
+    exactly where the authoritative picker exposes no value. Any selectable
+    value omitted by the projection ceiling is a durable fallback gap.
+    Malformed or internally inconsistent projection tuples also fail closed.
+    """
+
+    reasons: set[str] = set()
+    key_only: set[tuple[str, AttributeType]] = set()
+    try:
+        projection_complete = _projection_flag(
+            row.get("selectable_projection_complete")
+        )
+    except TypeError:
+        projection_complete = False
+        reasons.add(GAP_INVALID_SOURCE_MAPS)
+    else:
+        if not projection_complete:
+            reasons.add(GAP_SELECTABLE_VALUE_PROJECTION)
+
+    attrs_string: dict[str, str] = {}
+    string_value_bytes = 0
+    raw_strings = row.get("attrs_string_projection")
+    try:
+        if not isinstance(raw_strings, (list, tuple)):
+            raise TypeError("string projection must be an array")
+        for item in raw_strings:
+            if not isinstance(item, (list, tuple)) or len(item) != 3:
+                raise TypeError("string projection tuple is invalid")
+            key, key_only_raw, value = item
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise TypeError("string projection fields are invalid")
+            if key in attrs_string:
+                raise ValueError("string projection contains a duplicate key")
+            is_key_only = _projection_flag(key_only_raw)
+            if is_key_only:
+                if value:
+                    raise ValueError("key-only string projection retained a value")
+                key_only.add((key, "string"))
+            else:
+                if not value:
+                    raise ValueError("empty string projection was not key-only")
+                value_bytes = len(value.encode("utf-8"))
+                if value_bytes > PROJECTED_TYPED_STRING_VALUE_BYTES:
+                    raise ValueError(
+                        "projected typed string exceeded its value ceiling"
+                    )
+                string_value_bytes += value_bytes
+            attrs_string[key] = value
+        if string_value_bytes > PROJECTED_VALUE_BUDGET_BYTES:
+            raise ValueError("projected strings exceeded their global byte ceiling")
+    except (TypeError, ValueError):
+        reasons.add(GAP_INVALID_SOURCE_MAPS)
+        attrs_string = {}
+        key_only = {
+            item for item in key_only if item[1] not in ("string", "number", "boolean")
+        }
+
+    raw_numbers = row.get("attrs_number")
+    raw_booleans = row.get("attrs_bool")
+    attrs_number: dict[str, int | float | Decimal] = {}
+    attrs_bool: dict[str, int] = {}
+    if not isinstance(raw_numbers, Mapping) or not isinstance(raw_booleans, Mapping):
+        reasons.add(GAP_INVALID_SOURCE_MAPS)
+    else:
+        try:
+            for key, value in raw_numbers.items():
+                if not isinstance(key, str) or type(value) not in (int, float, Decimal):
+                    raise TypeError("number projection fields are invalid")
+                if type(value) in (float, Decimal) and not math.isfinite(float(value)):
+                    attrs_number[key] = 0
+                    key_only.add((key, "number"))
+                else:
+                    attrs_number[key] = value
+            for key, value in raw_booleans.items():
+                if not isinstance(key, str) or type(value) not in (bool, int):
+                    raise TypeError("boolean projection fields are invalid")
+                if type(value) is int and not 0 <= value <= 255:
+                    raise ValueError("boolean projection escaped UInt8")
+                attrs_bool[key] = int(bool(value))
+        except (TypeError, ValueError, OverflowError):
+            reasons.add(GAP_INVALID_SOURCE_MAPS)
+            attrs_number = {}
+            attrs_bool = {}
+            key_only = {
+                item for item in key_only if item[1] not in ("number", "boolean")
+            }
+
+    extra: dict[str, Any] = {}
+    raw_extra = row.get("attributes_extra_projection")
+    try:
+        extra_valid = _projection_flag(row.get("attributes_extra_valid"))
+        if not isinstance(raw_extra, (list, tuple)):
+            raise TypeError("extra projection must be an array")
+        if not extra_valid:
+            if raw_extra:
+                raise ValueError("invalid JSON returned a non-empty projection")
+            reasons.add(GAP_INVALID_ATTRIBUTES_EXTRA)
+        else:
+            projected_array_members = 0
+            projected_array_bytes = 0
+            for item in raw_extra:
+                if not isinstance(item, (list, tuple)) or len(item) != 4:
+                    raise TypeError("extra projection tuple is invalid")
+                key, json_type, key_only_raw, raw_members = item
+                if (
+                    not isinstance(key, str)
+                    or not isinstance(json_type, str)
+                    or not isinstance(raw_members, (list, tuple))
+                    or key in extra
+                ):
+                    raise TypeError("extra projection fields are invalid")
+                is_key_only = _projection_flag(key_only_raw)
+                if json_type == "Array":
+                    if is_key_only:
+                        if raw_members:
+                            raise ValueError(
+                                "key-only array projection retained members"
+                            )
+                        if projection_complete:
+                            raise ValueError(
+                                "complete projection marked an array key-only"
+                            )
+                        extra[key] = []
+                        key_only.add((key, "array"))
+                        continue
+                    decoded_members: list[str | int | float | bool] = []
+                    for raw_member in raw_members:
+                        if not isinstance(raw_member, str):
+                            raise TypeError("projected array member must be raw JSON")
+                        member_bytes = len(raw_member.encode("utf-8"))
+                        member = json.loads(raw_member)
+                        if type(member) not in (str, int, float, bool):
+                            raise ValueError("projected array member was not a scalar")
+                        if type(member) is float and not math.isfinite(member):
+                            raise ValueError("projected array member was not finite")
+                        if type(member) is str:
+                            if not member:
+                                raise ValueError(
+                                    "empty projected array strings are not selectable"
+                                )
+                            if (
+                                len(member.encode("utf-8"))
+                                > PROJECTED_ARRAY_STRING_VALUE_BYTES
+                            ):
+                                raise ValueError(
+                                    "projected array string exceeded its value ceiling"
+                                )
+                        if type(member) is int and not (
+                            -(1 << 63) <= member <= (1 << 64) - 1
+                        ):
+                            raise ValueError(
+                                "projected array integer escaped the public range"
+                            )
+                        decoded_members.append(member)
+                        projected_array_members += 1
+                        projected_array_bytes += member_bytes
+                    extra[key] = decoded_members
+                elif json_type == "Object":
+                    if not is_key_only or raw_members:
+                        raise ValueError(
+                            "object projection was not explicitly key-only"
+                        )
+                    extra[key] = {}
+                    key_only.add((key, "map"))
+                elif json_type in {
+                    "String",
+                    "Int64",
+                    "UInt64",
+                    "Float64",
+                    "Bool",
+                    "Null",
+                }:
+                    if not is_key_only or raw_members:
+                        raise ValueError("JSON scalar was not explicitly key-only")
+                    extra[key] = None
+                    key_only.add((key, "json"))
+                else:
+                    raise ValueError("extra projection returned an unknown JSON type")
+            if projected_array_members > CATALOG_BUILD_LIMITS.max_array_members:
+                raise ValueError("projected arrays exceeded the member ceiling")
+            if projected_array_bytes > PROJECTED_VALUE_BUDGET_BYTES:
+                raise ValueError("projected arrays exceeded the byte ceiling")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        reasons.add(GAP_INVALID_ATTRIBUTES_EXTRA)
+        extra = {}
+        key_only = {
+            item for item in key_only if item[1] not in ("array", "map", "json")
+        }
+
+    return (
+        attrs_string,  # type: ignore[return-value]
+        attrs_number,  # type: ignore[return-value]
+        attrs_bool,  # type: ignore[return-value]
+        extra,
+        frozenset(key_only),
+        reasons,
+    )
+
+
+def _projection_flag(value: Any) -> bool:
+    if type(value) is not int or value not in (0, 1):
+        raise TypeError("projection flag must be UInt8")
+    return bool(value)
 
 
 def _parse_source_cursor(row: Mapping[str, Any]) -> SourceCursor:
@@ -1678,6 +2068,7 @@ __all__ = [
     "DEFAULT_SOURCE_ATTRIBUTE_ENTRIES",
     "GAP_INVALID_ATTRIBUTES_EXTRA",
     "GAP_INVALID_SOURCE_MAPS",
+    "GAP_SELECTABLE_VALUE_PROJECTION",
     "GAP_SOURCE_ATTRIBUTE_BYTES",
     "GAP_SOURCE_ATTRIBUTE_ENTRIES",
     "KEY_INSERT_COLUMNS",
@@ -1688,6 +2079,9 @@ __all__ = [
     "MAX_SOURCE_ATTRIBUTE_BYTES",
     "MAX_SOURCE_ATTRIBUTE_ENTRIES",
     "MAX_WINDOWS",
+    "PROJECTED_ARRAY_STRING_VALUE_BYTES",
+    "PROJECTED_TYPED_STRING_VALUE_BYTES",
+    "PROJECTED_VALUE_BUDGET_BYTES",
     "READ_SETTINGS",
     "SOURCE_TABLE",
     "SourceCursor",

@@ -7,8 +7,9 @@ needs only Python 3.11+, ``clickhouse-connect``, and these sibling files:
 * attribute_catalog_backfill.py
 * attribute_catalog_builder.py
 * attribute_catalog_codec.py
+* attribute_suggestion_contract.py
 
-That makes the four-file bundle runnable on a development host whose checked
+That makes the five-file bundle runnable on a development host whose checked
 out Django application is stale. The underlying runner remains the single
 source of truth for scoping, SQL, checkpoints, write allowlists, and bounds.
 
@@ -45,32 +46,36 @@ def _load_runner_contract() -> dict[str, Any]:
 
     ``tracer.services.clickhouse.__init__`` imports the full analytics service
     and Django settings. A flat dev bundle has neither. Synthetic namespace
-    packages let Python resolve only the three audited sibling modules.
+    packages let Python resolve only the four audited sibling modules.
     """
 
     sibling_dir = Path(__file__).resolve().parent
+    repository_utils_dir = sibling_dir.parents[2] / "utils"
     package_names = (
         "tracer",
+        "tracer.utils",
         "tracer.services",
         "tracer.services.clickhouse",
         "tracer.services.clickhouse.v2",
     )
-    parent: types.ModuleType | None = None
     for name in package_names:
         module = sys.modules.get(name)
         if module is None:
             module = types.ModuleType(name)
             module.__package__ = name
-            module.__path__ = [str(sibling_dir)]  # type: ignore[attr-defined]
+            search_paths = [str(sibling_dir)]
+            if name == "tracer.utils" and repository_utils_dir.is_dir():
+                search_paths.append(str(repository_utils_dir))
+            module.__path__ = search_paths  # type: ignore[attr-defined]
             sys.modules[name] = module
+            parent_name, _, child_name = name.rpartition(".")
+            parent = sys.modules.get(parent_name)
             if parent is not None:
-                setattr(parent, name.rsplit(".", 1)[-1], module)
+                setattr(parent, child_name, module)
         else:
             existing_path = getattr(module, "__path__", None)
             if existing_path is not None and str(sibling_dir) not in existing_path:
                 existing_path.append(str(sibling_dir))
-        parent = module
-
     module = importlib.import_module(
         "tracer.services.clickhouse.v2.attribute_catalog_backfill"
     )

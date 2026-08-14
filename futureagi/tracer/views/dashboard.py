@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import blake2b
 from math import isfinite
@@ -58,6 +58,7 @@ from tracer.services.clickhouse.attribute_reads import (
     ATTRIBUTE_READ_MAX_PROJECTS,
     AttributeReadSelector,
     InvalidAttributeKey,
+    attribute_value_cursor_digest,
 )
 from tracer.services.clickhouse.client import (
     get_clickhouse_client,
@@ -100,8 +101,23 @@ from tracer.services.clickhouse.read_budget import (
     is_clickhouse_query_error,
     is_read_budget_error,
 )
+from tracer.services.clickhouse.v2.attribute_catalog_cutover import (
+    CATALOG_VALUE_CURSOR_MARKER,
+    catalog_value_rows,
+    mark_catalog_response,
+    try_catalog_value_page,
+    value_checkpoint_from_state,
+    value_checkpoint_state,
+)
 from tracer.services.clickhouse.v2.attribute_catalog_shadow import (
     run_catalog_value_shadow,
+)
+from tracer.services.clickhouse.v2.attribute_catalog_snapshot import (
+    CATALOG_SNAPSHOT_MODE,
+    catalog_dev_snapshot_enabled,
+    catalog_dev_snapshot_window,
+    catalog_snapshot_metadata,
+    mark_catalog_snapshot_response,
 )
 from tracer.services.clickhouse.v2.query_builders.dashboard import (
     DashboardQueryBuilderV2,
@@ -4055,6 +4071,24 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                         page_size = int(page_size)
                         if project_scope.batched:
                             batch_lane = "custom_attribute"
+                            configured_snapshot_window = catalog_dev_snapshot_window()
+                            cursor_window_mode = None
+                            if configured_snapshot_window is not None or (
+                                cursor_token and catalog_dev_snapshot_enabled()
+                            ):
+                                cursor_window_mode = CATALOG_SNAPSHOT_MODE
+                            batched_query = {
+                                "metric_name": metric_name,
+                                "metric_type": metric_type,
+                                "source": source,
+                                "search": search,
+                                "attribute_type": attribute_type,
+                                **(
+                                    {"query_window_mode": cursor_window_mode}
+                                    if cursor_window_mode is not None
+                                    else {}
+                                ),
+                            }
                             batched_cursor = _batched_filter_value_cursor(
                                 request,
                                 project_scope,
@@ -4062,27 +4096,26 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 cursor_token=cursor_token,
                                 page_size=page_size,
                                 lane=batch_lane,
-                                query={
-                                    "metric_name": metric_name,
-                                    "metric_type": metric_type,
-                                    "source": source,
-                                    "search": search,
-                                    "attribute_type": attribute_type,
-                                },
+                                query=batched_query,
                             )
                             project_scope = batched_cursor.scope
                             project_ids = list(project_scope.project_ids)
                             cursor_state = batched_cursor.cursor_state
-                            window_start = (
-                                cursor_state.window_start
-                                if cursor_state is not None
-                                else _FILTER_VALUE_RETAINED_START
+                            snapshot_window = (
+                                configured_snapshot_window
+                                if cursor_state is None
+                                else None
                             )
-                            window_end = (
-                                cursor_state.window_end
-                                if cursor_state is not None
-                                else datetime.now(UTC)
-                            )
+                            if cursor_state is not None:
+                                # Resumed bounds come only from the signed
+                                # cursor, even if DEV settings change mid-walk.
+                                window_start = cursor_state.window_start
+                                window_end = cursor_state.window_end
+                            elif snapshot_window is not None:
+                                window_start, window_end = snapshot_window
+                            else:
+                                window_start = _FILTER_VALUE_RETAINED_START
+                                window_end = datetime.now(UTC)
                             if not project_ids:
                                 return self._gm.success_response(
                                     _empty_batched_filter_value_payload(
@@ -4099,7 +4132,28 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                     )
                                 )
                             physical_order = batched_cursor.physical_order
+                            catalog_after = None
+                            catalog_cursor = False
                             if batched_cursor.new_project_batch:
+                                segment_end = window_end
+                                before_identity = None
+                                resume_identity = None
+                                resume_member_offset = 0
+                                segment_start = None
+                            elif (
+                                len(physical_order) == 2
+                                and physical_order[0] == CATALOG_VALUE_CURSOR_MARKER
+                            ):
+                                try:
+                                    catalog_after = value_checkpoint_from_state(
+                                        physical_order[1]
+                                    )
+                                except (TypeError, ValueError) as exc:
+                                    raise ListCursorError(
+                                        "invalid_cursor",
+                                        "The continuation cursor is invalid.",
+                                    ) from exc
+                                catalog_cursor = True
                                 segment_end = window_end
                                 before_identity = None
                                 resume_identity = None
@@ -4162,6 +4216,94 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                     window_end=window_end,
                                 )
                             )
+                            catalog_attempt = try_catalog_value_page(
+                                project_ids=project_ids,
+                                attribute_key=metric_name,
+                                window_start=window_start,
+                                window_end=window_end,
+                                page_size=page_size,
+                                attribute_types=(
+                                    (attribute_type,) if attribute_type else None
+                                ),
+                                search=search,
+                                after=(catalog_after if catalog_cursor else None),
+                                request_deadline=filter_value_deadline,
+                            )
+                            if catalog_attempt.page is not None:
+                                catalog_page = catalog_attempt.page
+                                visible_rows = []
+                                appended_digests = []
+                                for row in catalog_value_rows(catalog_page):
+                                    digest = attribute_value_cursor_digest(
+                                        row.type, row.value
+                                    )
+                                    if seen_state.contains(digest):
+                                        continue
+                                    visible_rows.append(row)
+                                    appended_digests.append(digest)
+                                has_more, browse_status, next_cursor = (
+                                    _encode_batched_filter_value_cursor(
+                                        batched_cursor,
+                                        page_size=page_size,
+                                        window_start=window_start,
+                                        window_end=window_end,
+                                        seen_state=seen_state,
+                                        state_binding=state_binding,
+                                        appended_digests=tuple(appended_digests),
+                                        lane=batch_lane,
+                                        physical_order=(
+                                            CATALOG_VALUE_CURSOR_MARKER,
+                                            value_checkpoint_state(
+                                                catalog_page.next_checkpoint
+                                            ),
+                                        ),
+                                        physical_has_more=catalog_page.has_more,
+                                    )
+                                )
+                                values = [
+                                    {
+                                        "value": row.value,
+                                        "type": row.type,
+                                        "label": (
+                                            "true"
+                                            if row.value is True
+                                            else "false"
+                                            if row.value is False
+                                            else str(row.value)
+                                        ),
+                                    }
+                                    for row in visible_rows
+                                ]
+                                payload = {
+                                    "values": values,
+                                    "query_complete": True,
+                                    "query_status": "complete",
+                                    "query_window_start": window_start.isoformat(),
+                                    "query_window_end": window_end.isoformat(),
+                                    "query_count": catalog_page.query_count,
+                                    **catalog_snapshot_metadata(
+                                        window_start=window_start,
+                                        window_end=window_end,
+                                        cursor_window_mode=cursor_window_mode,
+                                    ),
+                                    "has_more": has_more,
+                                    "browse_status": browse_status,
+                                    "next_cursor": next_cursor,
+                                    **(
+                                        {"attribute_type": attribute_type}
+                                        if attribute_type
+                                        else {}
+                                    ),
+                                }
+                                return mark_catalog_snapshot_response(
+                                    mark_catalog_response(
+                                        self._gm.success_response(payload),
+                                        catalog_attempt,
+                                    ),
+                                    window_start=window_start,
+                                    window_end=window_end,
+                                    cursor_window_mode=cursor_window_mode,
+                                )
                             selector = AttributeReadSelector(
                                 typed_only=True,
                                 json_attribute_mode="arrays",
@@ -4238,17 +4380,22 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 for row in page_read.rows
                             ]
                             payload = {
-                                    "values": values,
-                                    **page_read.metadata.public_payload(),
-                                    "has_more": has_more,
-                                    "browse_status": browse_status,
-                                    "next_cursor": next_cursor,
-                                    **(
-                                        {"attribute_type": attribute_type}
-                                        if attribute_type
-                                        else {}
-                                    ),
-                                }
+                                "values": values,
+                                **page_read.metadata.public_payload(),
+                                **catalog_snapshot_metadata(
+                                    window_start=window_start,
+                                    window_end=window_end,
+                                    cursor_window_mode=cursor_window_mode,
+                                ),
+                                "has_more": has_more,
+                                "browse_status": browse_status,
+                                "next_cursor": next_cursor,
+                                **(
+                                    {"attribute_type": attribute_type}
+                                    if attribute_type
+                                    else {}
+                                ),
+                            }
                             _run_catalog_value_shadow_fail_open(
                                 project_ids=project_ids,
                                 attribute_key=metric_name,
@@ -4263,7 +4410,15 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 continuation=bool(cursor_token),
                                 request_deadline=filter_value_deadline,
                             )
-                            return self._gm.success_response(payload)
+                            return mark_catalog_snapshot_response(
+                                mark_catalog_response(
+                                    self._gm.success_response(payload),
+                                    catalog_attempt,
+                                ),
+                                window_start=window_start,
+                                window_end=window_end,
+                                cursor_window_mode=cursor_window_mode,
+                            )
 
                         cursor_scope = cursor_scope_for_request(
                             request,
@@ -4277,7 +4432,16 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                             "search": search,
                             "attribute_type": attribute_type,
                         }
+                        configured_snapshot_window = catalog_dev_snapshot_window()
+                        cursor_window_mode = None
+                        if configured_snapshot_window is not None or (
+                            cursor_token and catalog_dev_snapshot_enabled()
+                        ):
+                            cursor_window_mode = CATALOG_SNAPSHOT_MODE
+                            cursor_query["query_window_mode"] = cursor_window_mode
                         selector = None
+                        catalog_after = None
+                        catalog_cursor = False
                         if cursor_token:
                             cursor_state = decode_list_cursor(
                                 cursor_token,
@@ -4286,84 +4450,124 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 query=cursor_query,
                                 page_size=page_size,
                             )
-                            if len(cursor_state.order) != 5:
-                                raise ListCursorError(
-                                    "invalid_cursor",
-                                    "The continuation cursor is invalid.",
-                                )
-                            (
-                                segment_end,
-                                raw_before_identity,
-                                raw_resume_identity,
-                                resume_member_offset,
-                                seen_reference,
-                            ) = cursor_state.order
                             if (
-                                not isinstance(segment_end, datetime)
-                                or not isinstance(raw_before_identity, tuple)
-                                or len(raw_before_identity) not in {0, 4}
-                                or not isinstance(raw_resume_identity, tuple)
-                                or len(raw_resume_identity) not in {0, 4}
-                                or (raw_before_identity and raw_resume_identity)
-                                or not isinstance(resume_member_offset, int)
-                                or resume_member_offset < 0
+                                len(cursor_state.order) == 3
+                                and cursor_state.order[0] == CATALOG_VALUE_CURSOR_MARKER
                             ):
-                                raise ListCursorError(
-                                    "invalid_cursor",
-                                    "The continuation cursor is invalid.",
+                                _, raw_catalog_after, seen_reference = (
+                                    cursor_state.order
                                 )
-                            before_identity = None
-                            if raw_before_identity:
-                                if not all(
-                                    isinstance(value, str)
-                                    for value in raw_before_identity[:3]
-                                ) or not isinstance(raw_before_identity[3], datetime):
+                                try:
+                                    catalog_after = value_checkpoint_from_state(
+                                        raw_catalog_after
+                                    )
+                                except (TypeError, ValueError) as exc:
+                                    raise ListCursorError(
+                                        "invalid_cursor",
+                                        "The continuation cursor is invalid.",
+                                    ) from exc
+                                if not isinstance(seen_reference, tuple):
                                     raise ListCursorError(
                                         "invalid_cursor",
                                         "The continuation cursor is invalid.",
                                     )
-                                before_identity = raw_before_identity
-                            resume_identity = None
-                            if raw_resume_identity:
-                                if not all(
-                                    isinstance(value, str)
-                                    for value in raw_resume_identity[:3]
-                                ) or not isinstance(raw_resume_identity[3], datetime):
-                                    raise ListCursorError(
-                                        "invalid_cursor",
-                                        "The continuation cursor is invalid.",
-                                    )
-                                resume_identity = raw_resume_identity
-                            window_start = cursor_state.window_start
-                            window_end = cursor_state.window_end
-                            segment_start = cursor_state.scan_slice_start
-                            scan_slice_end = cursor_state.scan_slice_end
-                            if (
-                                (segment_start is None) != (scan_slice_end is None)
-                                or scan_slice_end is not None
-                                and scan_slice_end != segment_end
-                            ):
+                                catalog_cursor = True
+                                window_start = cursor_state.window_start
+                                window_end = cursor_state.window_end
+                                segment_end = window_end
+                                segment_start = None
+                                before_identity = None
+                                resume_identity = None
+                                resume_member_offset = 0
+                            elif len(cursor_state.order) != 5:
                                 raise ListCursorError(
                                     "invalid_cursor",
                                     "The continuation cursor is invalid.",
                                 )
+                            else:
+                                (
+                                    segment_end,
+                                    raw_before_identity,
+                                    raw_resume_identity,
+                                    resume_member_offset,
+                                    seen_reference,
+                                ) = cursor_state.order
+                                if (
+                                    not isinstance(segment_end, datetime)
+                                    or not isinstance(raw_before_identity, tuple)
+                                    or len(raw_before_identity) not in {0, 4}
+                                    or not isinstance(raw_resume_identity, tuple)
+                                    or len(raw_resume_identity) not in {0, 4}
+                                    or (raw_before_identity and raw_resume_identity)
+                                    or not isinstance(resume_member_offset, int)
+                                    or resume_member_offset < 0
+                                ):
+                                    raise ListCursorError(
+                                        "invalid_cursor",
+                                        "The continuation cursor is invalid.",
+                                    )
+                                before_identity = None
+                                if raw_before_identity:
+                                    if not all(
+                                        isinstance(value, str)
+                                        for value in raw_before_identity[:3]
+                                    ) or not isinstance(
+                                        raw_before_identity[3], datetime
+                                    ):
+                                        raise ListCursorError(
+                                            "invalid_cursor",
+                                            "The continuation cursor is invalid.",
+                                        )
+                                    before_identity = raw_before_identity
+                                resume_identity = None
+                                if raw_resume_identity:
+                                    if not all(
+                                        isinstance(value, str)
+                                        for value in raw_resume_identity[:3]
+                                    ) or not isinstance(
+                                        raw_resume_identity[3], datetime
+                                    ):
+                                        raise ListCursorError(
+                                            "invalid_cursor",
+                                            "The continuation cursor is invalid.",
+                                        )
+                                    resume_identity = raw_resume_identity
+                                window_start = cursor_state.window_start
+                                window_end = cursor_state.window_end
+                                segment_start = cursor_state.scan_slice_start
+                                scan_slice_end = cursor_state.scan_slice_end
+                                if (
+                                    (segment_start is None) != (scan_slice_end is None)
+                                    or scan_slice_end is not None
+                                    and scan_slice_end != segment_end
+                                ):
+                                    raise ListCursorError(
+                                        "invalid_cursor",
+                                        "The continuation cursor is invalid.",
+                                    )
                         else:
-                            selector = AttributeReadSelector(
-                                typed_only=True,
-                                json_attribute_mode="arrays",
-                                wall_timeout_ms=filter_value_deadline.remaining_ms(
-                                    ATTRIBUTE_PROPERTY_PICKER_WALL_TIMEOUT_MS
-                                ),
-                            )
-                            window_end = datetime.now(UTC)
-                            retained_start = selector.retained_window_start(
-                                project_ids,
-                                window_end=window_end,
-                            )
-                            window_start = retained_attribute_window_start(
-                                retained_start,
-                                window_end=window_end,
-                            )
+                            snapshot_window = configured_snapshot_window
+                            if snapshot_window is not None:
+                                window_start, window_end = snapshot_window
+                            else:
+                                selector = AttributeReadSelector(
+                                    typed_only=True,
+                                    json_attribute_mode="arrays",
+                                    wall_timeout_ms=(
+                                        filter_value_deadline.remaining_ms(
+                                            ATTRIBUTE_PROPERTY_PICKER_WALL_TIMEOUT_MS
+                                        )
+                                    ),
+                                )
+                                window_end = datetime.now(UTC)
+                                retained_start = selector.retained_window_start(
+                                    project_ids,
+                                    window_end=window_end,
+                                )
+                                window_start = retained_attribute_window_start(
+                                    retained_start,
+                                    window_end=window_end,
+                                )
                             segment_end = window_end
                             segment_start = None
                             before_identity = None
@@ -4393,6 +4597,112 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                             raise ListCursorError(
                                 "invalid_cursor",
                                 "The continuation cursor is invalid.",
+                            )
+
+                        catalog_attempt = try_catalog_value_page(
+                            project_ids=project_ids,
+                            attribute_key=metric_name,
+                            window_start=window_start,
+                            window_end=window_end,
+                            page_size=page_size,
+                            attribute_types=(
+                                (attribute_type,) if attribute_type else None
+                            ),
+                            search=search,
+                            after=(catalog_after if catalog_cursor else None),
+                            request_deadline=filter_value_deadline,
+                        )
+                        if catalog_attempt.page is not None:
+                            catalog_page = catalog_attempt.page
+                            visible_rows = []
+                            appended_digests = []
+                            for row in catalog_value_rows(catalog_page):
+                                digest = attribute_value_cursor_digest(
+                                    row.type, row.value
+                                )
+                                if seen_state.contains(digest):
+                                    continue
+                                visible_rows.append(row)
+                                appended_digests.append(digest)
+                            next_cursor = None
+                            if catalog_page.has_more:
+                                seen_reference = persist_attribute_cursor_seen_state(
+                                    seen_state,
+                                    tuple(appended_digests),
+                                    resource="dashboard_filter_values",
+                                    binding=state_binding,
+                                    validate_digest=lambda value: (
+                                        len(value) == 32
+                                        and all(
+                                            char in "0123456789abcdef" for char in value
+                                        )
+                                    ),
+                                )
+                                next_cursor = encode_list_cursor(
+                                    resource="dashboard_filter_values",
+                                    scope=cursor_scope,
+                                    query=cursor_query,
+                                    page_size=page_size,
+                                    window_start=window_start,
+                                    window_end=window_end,
+                                    order=(
+                                        CATALOG_VALUE_CURSOR_MARKER,
+                                        value_checkpoint_state(
+                                            catalog_page.next_checkpoint
+                                        ),
+                                        seen_reference,
+                                    ),
+                                    seen_rows=(
+                                        seen_state.seen_count + len(appended_digests)
+                                    ),
+                                )
+                            values = [
+                                {
+                                    "value": row.value,
+                                    "type": row.type,
+                                    "label": (
+                                        "true"
+                                        if row.value is True
+                                        else "false"
+                                        if row.value is False
+                                        else str(row.value)
+                                    ),
+                                }
+                                for row in visible_rows
+                            ]
+                            payload = {
+                                "values": values,
+                                "query_complete": True,
+                                "query_status": "complete",
+                                "query_window_start": window_start.isoformat(),
+                                "query_window_end": window_end.isoformat(),
+                                "query_count": catalog_page.query_count,
+                                **catalog_snapshot_metadata(
+                                    window_start=window_start,
+                                    window_end=window_end,
+                                    cursor_window_mode=cursor_window_mode,
+                                ),
+                                "has_more": catalog_page.has_more,
+                                "browse_status": (
+                                    "continuation"
+                                    if catalog_page.has_more
+                                    else "exhausted"
+                                ),
+                                "next_cursor": next_cursor,
+                                **(
+                                    {"attribute_type": attribute_type}
+                                    if attribute_type
+                                    else {}
+                                ),
+                            }
+                            return mark_catalog_snapshot_response(
+                                mark_catalog_response(
+                                    self._gm.success_response(payload),
+                                    catalog_attempt,
+                                ),
+                                window_start=window_start,
+                                window_end=window_end,
+                                cursor_window_mode=cursor_window_mode,
                             )
 
                         # Cursor decode and server-held seen-state lookup are
@@ -4499,17 +4809,22 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 ),
                             )
                         payload = {
-                                "values": values,
-                                **page_read.metadata.public_payload(),
-                                "has_more": page_read.has_more,
-                                "browse_status": page_read.browse_status,
-                                "next_cursor": next_cursor,
-                                **(
-                                    {"attribute_type": attribute_type}
-                                    if attribute_type
-                                    else {}
-                                ),
-                            }
+                            "values": values,
+                            **page_read.metadata.public_payload(),
+                            **catalog_snapshot_metadata(
+                                window_start=window_start,
+                                window_end=window_end,
+                                cursor_window_mode=cursor_window_mode,
+                            ),
+                            "has_more": page_read.has_more,
+                            "browse_status": page_read.browse_status,
+                            "next_cursor": next_cursor,
+                            **(
+                                {"attribute_type": attribute_type}
+                                if attribute_type
+                                else {}
+                            ),
+                        }
                         _run_catalog_value_shadow_fail_open(
                             project_ids=project_ids,
                             attribute_key=metric_name,
@@ -4524,11 +4839,75 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                             continuation=bool(cursor_token),
                             request_deadline=filter_value_deadline,
                         )
-                        return self._gm.success_response(payload)
+                        return mark_catalog_snapshot_response(
+                            mark_catalog_response(
+                                self._gm.success_response(payload),
+                                catalog_attempt,
+                            ),
+                            window_start=window_start,
+                            window_end=window_end,
+                            cursor_window_mode=cursor_window_mode,
+                        )
 
+                    compatibility_window_end = datetime.now(UTC)
+                    compatibility_window_start = compatibility_window_end - timedelta(
+                        days=365
+                    )
+                    catalog_attempt = try_catalog_value_page(
+                        project_ids=project_ids,
+                        attribute_key=metric_name,
+                        window_start=compatibility_window_start,
+                        window_end=compatibility_window_end,
+                        page_size=20 if search else 50,
+                        attribute_types=((attribute_type,) if attribute_type else None),
+                        search=search,
+                        after=None,
+                        request_deadline=filter_value_deadline,
+                    )
+                    if catalog_attempt.page is not None:
+                        if not catalog_attempt.page.has_more:
+                            values = [
+                                {
+                                    "value": row.value,
+                                    "type": row.type,
+                                    "label": (
+                                        "true"
+                                        if row.value is True
+                                        else "false"
+                                        if row.value is False
+                                        else str(row.value)
+                                    ),
+                                }
+                                for row in catalog_value_rows(catalog_attempt.page)
+                            ]
+                            payload = _legacy_filter_value_scope_metadata(
+                                {
+                                    "values": values,
+                                    "query_complete": True,
+                                    "query_status": "complete",
+                                    "query_window_start": (
+                                        compatibility_window_start.isoformat()
+                                    ),
+                                    "query_window_end": (
+                                        compatibility_window_end.isoformat()
+                                    ),
+                                    "query_count": (catalog_attempt.page.query_count),
+                                },
+                                project_scope,
+                            )
+                            return mark_catalog_response(
+                                self._gm.success_response(payload),
+                                catalog_attempt,
+                            )
+                        catalog_attempt = replace(
+                            catalog_attempt,
+                            page=None,
+                            fallback_reason="compatibility_result_truncated",
+                        )
                     selector = AttributeReadSelector(
                         typed_only=True,
                         json_attribute_mode="arrays",
+                        now=compatibility_window_end,
                         wall_timeout_ms=filter_value_deadline.remaining_ms(
                             ATTRIBUTE_PROPERTY_PICKER_WALL_TIMEOUT_MS
                         ),
@@ -4587,13 +4966,14 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                         authoritative_rows=read.rows,
                         window_start=read.metadata.query_window_start,
                         window_end=read.metadata.query_window_end,
-                        attribute_types=(
-                            (attribute_type,) if attribute_type else None
-                        ),
+                        attribute_types=((attribute_type,) if attribute_type else None),
                         search=search,
                         request_deadline=filter_value_deadline,
                     )
-                    return self._gm.success_response(payload)
+                    return mark_catalog_response(
+                        self._gm.success_response(payload),
+                        catalog_attempt,
+                    )
                 except AttributeCursorStateError as exc:
                     if exc.code == "cursor_state_unavailable":
                         return self._gm.custom_error_response(

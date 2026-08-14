@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -18,6 +19,7 @@ from tracer.services.clickhouse.v2.attribute_catalog_backfill import (
     CHECKPOINT_TABLE,
     GAP_INVALID_ATTRIBUTES_EXTRA,
     GAP_INVALID_SOURCE_MAPS,
+    GAP_SELECTABLE_VALUE_PROJECTION,
     GAP_SOURCE_ATTRIBUTE_BYTES,
     GAP_SOURCE_ATTRIBUTE_ENTRIES,
     KEY_TABLE,
@@ -38,6 +40,13 @@ from tracer.services.clickhouse.v2.attribute_catalog_backfill import (
     iter_hour_windows,
     parse_utc_hour,
 )
+from tracer.services.clickhouse.v2.attribute_catalog_reader import (
+    CATALOG_MAX_VALUE_SEARCH_TEXT_BYTES,
+)
+from tracer.utils.attribute_suggestion_contract import (
+    TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES,
+)
+from tracer.utils.filter_operators import JSON_ARRAY_FILTER_MAX_STRING_UTF8_BYTES
 
 PROJECT_ID = "11111111-1111-4111-8111-111111111111"
 SINCE = datetime(2026, 1, 1, tzinfo=UTC)
@@ -92,6 +101,42 @@ def _source_row(
         "attrs_bool": {} if attrs_bool is None else attrs_bool,
         "attributes_extra": attributes_extra,
     }
+
+
+def _projected_source_row(span_id: str) -> dict[str, Any]:
+    row = _source_row(span_id)
+    row.pop("attrs_string")
+    row.pop("attributes_extra")
+    row.update(
+        {
+            "source_attribute_entries": 8,
+            "source_attribute_bytes": 512,
+            "attrs_string_projection": [
+                ("region", 0, "us"),
+                ("empty", 1, ""),
+            ],
+            "attrs_number": {"latency": 1.5, "not_finite": float("inf")},
+            "attrs_bool": {"cached": 1},
+            "attributes_extra_projection": [
+                (
+                    "tags",
+                    "Array",
+                    0,
+                    [
+                        '"blue"',
+                        "7",
+                        "true",
+                        json.dumps("é" * 2_048),
+                    ],
+                ),
+                ("nested", "Object", 1, []),
+                ("scalar_extra", "String", 1, []),
+            ],
+            "attributes_extra_valid": 1,
+            "selectable_projection_complete": 1,
+        }
+    )
+    return row
 
 
 def _checkpoint_row(
@@ -344,16 +389,37 @@ def test_source_and_checkpoint_sql_pin_select_only_keyset_and_bounds() -> None:
     assert "attrs_bool" not in identity_sql
     assert "attributes_extra" not in identity_sql
 
-    assert "argmax(attrs_string, _version)" in payload_sql
-    assert "argmax(attrs_number, _version)" in payload_sql
-    assert "argmax(attrs_bool, _version)" in payload_sql
-    assert "argmax(tuple(attributes_extra), _version).1" in payload_sql
+    assert "jsonextractkeysandvaluesraw(sp.attributes_extra)" in payload_sql
+    assert "jsonextractarrayraw" in payload_sql
+    assert "attrs_string_projection" in payload_sql
+    assert "attributes_extra_projection" in payload_sql
+    assert "projected_array_values_fit" in payload_sql
+    assert "selectable_projection_complete" in payload_sql
+    assert "jsonextractstring(member)" in payload_sql
+    assert "isfinite(jsonextractfloat(member))" in payload_sql
+    assert "argmax(" in payload_sql
     assert "catalog_source_identities" in payload_sql
     assert "catalog_after_" not in payload_sql
     assert "catalog_source_limit" not in payload_sql
-    assert "catalog_max_source_attribute_entries" in payload_sql
-    assert "catalog_max_source_attribute_bytes" in payload_sql
-    assert "cast(map(), 'map(string, string)')" in payload_sql
+    assert "catalog_projected_typed_string_value_bytes" in payload_sql
+    assert "catalog_projected_array_string_value_bytes" in payload_sql
+    assert "catalog_projected_value_budget_bytes" in payload_sql
+    assert "catalog_projected_array_members" in payload_sql
+    assert "latest_attributes_extra" not in payload_sql
+    assert "select\n    observation_type" in payload_sql
+    measured_sql = payload_sql.split("), measured_rows as", 1)[1].split(
+        "\nselect\n", 1
+    )[0]
+    encoded_tuple = re.search(
+        r"tojsonstring\(\s*tuple\((.*?)\)\s*\)", measured_sql, re.DOTALL
+    )
+    assert encoded_tuple is not None
+    assert [item.strip() for item in encoded_tuple.group(1).split(",")] == [
+        "attrs_string_projection",
+        "attrs_number",
+        "attrs_bool",
+        "attributes_extra_projection",
+    ]
 
     assert "source_version_fence" in occupied_sql
     assert "countif(_version > source_version_fence)" in occupied_sql
@@ -370,8 +436,10 @@ def test_source_and_checkpoint_sql_pin_select_only_keyset_and_bounds() -> None:
     assert READ_SETTINGS == {
         "max_execution_time": 8,
         "timeout_overflow_mode": "throw",
-        "max_threads": 2,
-        "max_memory_usage": 256 * 1024 * 1024,
+        "max_threads": 1,
+        "max_block_size": 1,
+        "preferred_block_size_bytes": 1 * 1024 * 1024,
+        "max_memory_usage": 768 * 1024 * 1024,
         "max_bytes_to_read": 512 * 1024 * 1024,
         "read_overflow_mode": "throw",
         "max_rows_to_read": 1_000_000,
@@ -381,7 +449,23 @@ def test_source_and_checkpoint_sql_pin_select_only_keyset_and_bounds() -> None:
     assert WRITE_SETTINGS["async_insert"] == 0
     assert WRITE_SETTINGS["wait_for_async_insert"] == 1
     assert WRITE_SETTINGS["max_execution_time"] < MAX_CLICKHOUSE_CALL_SECONDS
-    assert WRITE_SETTINGS["max_threads"] == 2
+    assert WRITE_SETTINGS["max_threads"] == 1
+
+
+def test_projection_string_limits_keep_typed_and_array_contracts_separate() -> None:
+    assert (
+        backfill.PROJECTED_ARRAY_STRING_VALUE_BYTES
+        == JSON_ARRAY_FILTER_MAX_STRING_UTF8_BYTES
+        == 4_096
+    )
+    assert backfill.PROJECTED_TYPED_STRING_VALUE_BYTES == 16_384
+    assert (
+        backfill.PROJECTED_TYPED_STRING_VALUE_BYTES
+        == TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES
+    )
+    assert CATALOG_MAX_VALUE_SEARCH_TEXT_BYTES <= (
+        backfill.PROJECTED_TYPED_STRING_VALUE_BYTES
+    )
 
 
 def test_single_page_inserts_keys_then_values_then_checkpoint() -> None:
@@ -566,15 +650,130 @@ def test_malformed_source_shapes_are_explicit_gap_rows(
     assert _nonempty_targets(io) == [CHECKPOINT_TABLE, CHECKPOINT_TABLE]
 
 
+def test_projected_key_only_attributes_are_complete_without_value_rows() -> None:
+    io = FakeIO(pages=[[_projected_source_row("span-1")]])
+    summary = _run(io)
+
+    assert summary.windows_completed == 1
+    assert summary.windows_gap == 0
+    assert summary.gap_rows == 0
+    assert summary.key_rows == 8
+    assert summary.value_rows == 7
+    value_call = next(
+        call
+        for call in io.insert_calls
+        if call[1] and call[0].endswith(f"`{VALUE_TABLE}`")
+    )
+    value_keys = [row[1] for row in value_call[1]]
+    assert value_keys == [
+        "cached",
+        "latency",
+        "region",
+        "tags",
+        "tags",
+        "tags",
+        "tags",
+    ]
+    assert not {
+        "empty",
+        "nested",
+        "not_finite",
+        "scalar_extra",
+    } & set(value_keys)
+
+
+def test_oversized_typed_string_is_complete_key_only_picker_metadata() -> None:
+    at_limit = "é" * (TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES // 2)
+    row = _projected_source_row("span-1")
+    row.update(
+        {
+            "source_attribute_entries": 2,
+            "source_attribute_bytes": 512,
+            "attrs_string_projection": [
+                ("at_limit", 0, at_limit),
+                ("oversized", 1, ""),
+            ],
+            "attrs_number": {},
+            "attrs_bool": {},
+            "attributes_extra_projection": [],
+            "selectable_projection_complete": 1,
+        }
+    )
+    io = FakeIO(pages=[[row]])
+
+    summary = _run(io)
+
+    assert summary.windows_gap == 0
+    assert summary.gap_rows == 0
+    assert summary.key_rows == 2
+    assert summary.value_rows == 1
+    key_call = next(
+        call
+        for call in io.insert_calls
+        if call[1] and call[0].endswith(f"`{KEY_TABLE}`")
+    )
+    value_call = next(
+        call
+        for call in io.insert_calls
+        if call[1] and call[0].endswith(f"`{VALUE_TABLE}`")
+    )
+    assert [inserted[1] for inserted in key_call[1]] == ["at_limit", "oversized"]
+    assert [inserted[1] for inserted in value_call[1]] == ["at_limit"]
+
+
+def test_selectable_projection_omission_is_a_durable_fallback_gap() -> None:
+    row = _projected_source_row("span-1")
+    row.update(
+        {
+            "attrs_string_projection": [("oversize", 1, "")],
+            "attributes_extra_projection": [("too_many", "Array", 1, [])],
+            "selectable_projection_complete": 0,
+            "source_attribute_entries": 2,
+        }
+    )
+    io = FakeIO(pages=[[row]])
+    summary = _run(io)
+
+    assert summary.windows_gap == 1
+    assert summary.gap_rows == 1
+    assert summary.gap_reasons == (GAP_SELECTABLE_VALUE_PROJECTION,)
+    assert summary.key_rows == 0
+    assert summary.value_rows == 0
+    assert _nonempty_targets(io) == [CHECKPOINT_TABLE, CHECKPOINT_TABLE]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda row: row.update(attrs_string_projection=[("oversize", 1, "leaked")]),
+        lambda row: row.update(
+            attributes_extra_projection=[("nested", "Object", 0, [])]
+        ),
+        lambda row: row.update(attributes_extra_valid=0),
+    ],
+)
+def test_inconsistent_projected_shapes_are_explicit_gaps(mutation) -> None:
+    row = _projected_source_row("span-1")
+    mutation(row)
+    io = FakeIO(pages=[[row]])
+    summary = _run(io)
+
+    assert summary.windows_gap == 1
+    assert summary.gap_rows == 1
+    assert summary.key_rows == 0
+    assert summary.value_rows == 0
+    assert _nonempty_targets(io) == [CHECKPOINT_TABLE, CHECKPOINT_TABLE]
+
+
 def test_builder_limit_gap_is_propagated_to_terminal_checkpoint() -> None:
-    attrs = {f"key-{index:03}": "value" for index in range(129)}
+    attrs = {f"key-{index:04}": "value" for index in range(1_025)}
     io = FakeIO(
         pages=[
             [
                 _source_row(
                     "span-1",
-                    entries=129,
-                    source_bytes=5_000,
+                    entries=1_025,
+                    source_bytes=50_000,
                     attrs_string=attrs,
                 )
             ]
@@ -582,10 +781,13 @@ def test_builder_limit_gap_is_propagated_to_terminal_checkpoint() -> None:
     )
     summary = _run(
         io,
-        _config(max_source_attribute_entries=200, max_source_attribute_bytes=10_000),
+        _config(
+            max_source_attribute_entries=2_048,
+            max_source_attribute_bytes=100_000,
+        ),
     )
-    assert summary.key_rows == 128
-    assert summary.value_rows == 128
+    assert summary.key_rows == 1_024
+    assert summary.value_rows == 1_024
     assert summary.gap_rows == 1
     assert "max_keys" in summary.gap_reasons
 

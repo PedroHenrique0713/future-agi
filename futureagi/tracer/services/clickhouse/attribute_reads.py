@@ -36,6 +36,9 @@ from tracer.services.clickhouse.read_budget import (
     ReadDeadlineExceeded,
     is_read_budget_error,
 )
+from tracer.utils.attribute_suggestion_contract import (
+    TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES,
+)
 from tracer.utils.filter_operators import (
     JSON_ARRAY_FILTER_MAX_STRING_UTF8_BYTES,
     JSON_ARRAY_FILTER_MAX_TOTAL_STRING_UTF8_BYTES,
@@ -3152,6 +3155,8 @@ class AttributeReadSelector:
 
         def decoded_has_usable_value(decoded: tuple[AttributeType, Any]) -> bool:
             attr_type, value = decoded
+            if attr_type == "string" and not _typed_string_is_suggestible(value):
+                return False
             candidates: tuple[Any, ...]
             if attr_type == "array":
                 if not isinstance(value, tuple):
@@ -3184,6 +3189,15 @@ class AttributeReadSelector:
                     row,
                     json_attribute_mode=json_mode,
                 )
+                if (
+                    decoded is not None
+                    and decoded[0] == "string"
+                    and not (_typed_string_is_suggestible(decoded[1]))
+                ):
+                    # Suggestion-only policy: the typed key and exact filtering
+                    # remain unchanged, but oversized picker values are omitted.
+                    latest_values.pop(identity, None)
+                    continue
                 if (
                     json_mode != "none"
                     and decoded is None
@@ -3566,6 +3580,8 @@ class AttributeReadSelector:
         counts: Counter[tuple[AttributeType, str]] = Counter()
         values: dict[tuple[AttributeType, str], AttributeValue] = {}
         for attr_type, value in latest_values.values():
+            if attr_type == "string" and not _typed_string_is_suggestible(value):
+                continue
             candidates: tuple[AttributeValue, ...]
             if attr_type == "array":
                 if not isinstance(value, tuple):
@@ -5046,6 +5062,8 @@ class AttributeReadSelector:
             attr_type, value = decoded
             if attr_type == "array":
                 return value if isinstance(value, tuple) else ()
+            if attr_type == "string" and not _typed_string_is_suggestible(value):
+                return ()
             return () if value in (None, "") else (value,)
 
         def consume_decoded(
@@ -6469,6 +6487,17 @@ def _value_search_text(value: Any) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def _typed_string_is_suggestible(value: Any) -> bool:
+    """Keep typed strings filterable while bounding picker payloads only."""
+
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        return len(value.encode("utf-8")) <= TYPED_STRING_SUGGESTION_MAX_UTF8_BYTES
+    except UnicodeEncodeError:
+        return False
 
 
 def merge_read_metadata(
