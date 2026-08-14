@@ -59,6 +59,23 @@ production proposal requires a separate managed multi-broker service with TLS,
 authentication, RF=3, and measured capacity; it must not reuse the Mimir demo
 broker.
 
+The broker compose file does not supervise application processes. Run the
+consumer as a separate service from the exact candidate image and give it a
+durable restart policy. A brand-new topic/group may start once with
+`--start-sequence-one-only`; every restart must seed from the delivery ledger:
+
+```text
+fi-catalog-consumer --seed-from-delivery-ledger
+```
+
+The process requires `FI_CATALOG_ENVIRONMENT=development`, Kafka broker/topic/
+group settings, the catalog-only ClickHouse INSERT identity in `FI_CATALOG_CH_*`,
+and a separate SELECT-only delivery-ledger identity in
+`FI_CATALOG_LEDGER_CH_*`. The ledger URL and database must exactly match the
+catalog destination. A deployment is not healthy merely because Kafka is up:
+the consumer must be running, its group must have no unexplained lag, and a
+restart/rebalance must reload sequence checkpoints before fetching.
+
 ## Qualification gates
 
 1. Snapshot every pre-existing table before the run.
@@ -76,4 +93,13 @@ broker.
 Backfill is separately guarded, project-scoped, UTC half-open, keyset-paged,
 and writes only key, value, and checkpoint tables. Always run `--dry-run`
 first. Its source identity is SELECT-only; its target database and credentials
-must differ from the source.
+must differ from the source. Exact query-ID cancellation also requires the
+narrow ClickHouse privilege below for each dedicated backfill identity:
+
+```sql
+GRANT SELECT(query, query_id, user) ON system.processes TO <backfill_user>;
+```
+
+Do not broaden this grant. Qualification must prove that a timed `sleep`
+query is killed by its exact ID, disappears from `system.processes`, and leaves
+all six catalog-table counts unchanged.

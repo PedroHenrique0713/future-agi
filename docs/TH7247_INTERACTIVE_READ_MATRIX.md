@@ -3,10 +3,13 @@
 > **Full API inventory; historical evidence anchors.** This document inventories
 > the registered changed public-action surface and known frontend consumers,
 > grouping non-Cartesian workflow routes where they share a contract. The
-> source/URL/consumer inventory is revalidated at exact release head
-> `e25fcf1286d318bc9694e786b6fb2c3c26daa1a8`; its linked runtime measurements
-> remain pinned to the pre-merge historical artifact and do not qualify that
-> exact head. See
+> source/URL/consumer inventory is revalidated at catalog implementation parent
+> `a0b7eb6f28471cd40996caf392934a077b95cedc`; this documentation-only successor
+> changes no runtime source. No frontend consumer changed after API optimization
+> head `e25fcf1286d318bc9694e786b6fb2c3c26daa1a8`; the two public-view additions
+> are inactive, fail-open catalog shadow calls. Linked runtime measurements
+> remain pinned to the pre-merge historical artifact and do not qualify either
+> implementation head. See
 > [`TH-7247_PROPERTY_API_MATRIX.md`](TH-7247_PROPERTY_API_MATRIX.md) for the
 > smaller SELECT-only release gate and its pending production targets.
 
@@ -179,8 +182,8 @@ read more.
 
 | Method and path | Actual time/filter contract | Pagination / read more | Current frontend consumer | Qualification and exact evidence |
 | --- | --- | --- | --- | --- |
-| `GET /tracer/project-version/list_runs/` | Project-lifetime PostgreSQL aggregate for one experiment project. It accepts system, eval, and annotation aggregate filters, but has no W0-W6 date contract and does not share the bounded trace/span attribute compiler. | Backend uses zero-based `page_number` and `page_size <= 500` after its dynamic aggregate/count. Rank and choice filters/sorts are applied only after slicing. The current `RunsList` uses `cacheBlockSize={30}` but computes `page_number = floor(startRow / 10)` while sending `page_size=30`, so frontend continuation arithmetic is inconsistent and can skip result windows. | Experiment project detail `RunsList`. | **Unqualified:** deep PG aggregate and frontend read more were not scale/continuity-qualified. [project_version.py](../futureagi/tracer/views/project_version.py) `ProjectVersionView.list_runs`; [RunsList.jsx](../frontend/src/sections/project-detail/RunsList.jsx); [test_project_version_annotation_rollups.py](../futureagi/tracer/tests/test_project_version_annotation_rollups.py). |
-| `GET /model-hub/prompt/metrics/`<br>`GET /model-hub/prompt/span-metrics/` | Prompt-history PG reads with generic metric filters, not shared W presets. The first groups by prompt version/label; the second lists matching spans. | Both accept zero-based `page_number` and `page_size <= 100`. The aggregate route reports `metadata.total_rows` as the current page length, while span-metrics computes an exact count. Both server-side AG Grid callers currently omit `page_number` and `page_size`, so subsequent blocks cannot request a different page; read more is **not wired correctly**. | Workbench prompt metrics `MetricsContent` and linked traces `LinkedTracesContent`. | **Unqualified:** no endpoint-scale matrix, and the current frontend continuation contract is incomplete. [prompt_metrics.py view](../futureagi/model_hub/views/prompt_metrics.py); [prompt_metrics.py query](../futureagi/model_hub/queries/prompt/prompt_metrics.py); [MetricsContent.jsx](../frontend/src/sections/workbench/createPrompt/Metrics/MetricsContent/MetricsContent.jsx); [LinkedTracesContent.jsx](../frontend/src/sections/workbench/createPrompt/Metrics/LinkedTracesContent/LinkedTracesContent.jsx); [test_prompt_and_report_contracts.py](../futureagi/model_hub/tests/test_prompt_and_report_contracts.py). |
+| `GET /tracer/project-version/list_runs/` | Project-lifetime PostgreSQL aggregate for one experiment project. It accepts system, eval, and annotation aggregate filters, but has no W0-W6 date contract and does not share the bounded trace/span attribute compiler. | Backend uses zero-based `page_number` and `page_size <= 500` after its dynamic aggregate/count. Rank and choice filters/sorts are applied only after slicing. `RunsList` derives both values from the actual AG Grid block (`endRow - startRow`), so its 30-row cache advances pages 0, 1, 2 without skipping windows. | Experiment project detail `RunsList`. | **Read-more contract fixed and unit-covered; endpoint scale remains unqualified** because the deep PG aggregate has no representative latency/continuity run. [project_version.py](../futureagi/tracer/views/project_version.py) `ProjectVersionView.list_runs`; [RunsList.jsx](../frontend/src/sections/project-detail/RunsList.jsx); [agGridPagination.test.js](../frontend/src/utils/__tests__/agGridPagination.test.js); [test_project_version_annotation_rollups.py](../futureagi/tracer/tests/test_project_version_annotation_rollups.py). |
+| `GET /model-hub/prompt/metrics/`<br>`GET /model-hub/prompt/span-metrics/` | Prompt-history PG reads with generic metric filters, not shared W presets. The first groups by prompt version/label; the second lists matching spans. | Both accept zero-based `page_number` and `page_size <= 100`. Both AG Grid callers send the block-derived page and size. The aggregate query publishes `count(*) OVER ()` from the same filtered statement; span metrics also returns an exact count, so later blocks retain a real terminal. | Workbench prompt metrics `MetricsContent` and linked traces `LinkedTracesContent`. | **Read-more contract fixed and unit-covered; endpoint scale remains unqualified** because neither route has a representative latency matrix. [prompt_metrics.py view](../futureagi/model_hub/views/prompt_metrics.py); [prompt_metrics.py query](../futureagi/model_hub/queries/prompt/prompt_metrics.py); [MetricsContent.jsx](../frontend/src/sections/workbench/createPrompt/Metrics/MetricsContent/MetricsContent.jsx); [LinkedTracesContent.jsx](../frontend/src/sections/workbench/createPrompt/Metrics/LinkedTracesContent/LinkedTracesContent.jsx); [agGridPagination.test.js](../frontend/src/utils/__tests__/agGridPagination.test.js); [test_prompt_and_report_contracts.py](../futureagi/model_hub/tests/test_prompt_and_report_contracts.py). |
 | `POST /model-hub/ai-filter/` | Natural-language filter construction, not a data-list time window. In `smart` trace mode, value grounding uses bounded 365-day system/custom-attribute reads capped at 100 values; dataset grounding reads at most 200 distinct values and returns at most 100. A degraded picker deliberately falls back to a literal value. | Not paged and not an exact catalog/read-more API. The agent may make multiple value-tool calls plus an external model call. | Shared `useAIFilter`: Observe `TraceFilterPanel`, Evals `EvalFilterPanel`, and generic dataset/simulation `FilterPanel` consumers. | **Unqualified for the ten-second API SLA:** the finite grounding reads are covered, but the full model/tool loop has no TH-7247 endpoint-latency matrix. [ai_filter.py](../futureagi/model_hub/views/ai_filter.py); [use-ai-filter.js](../frontend/src/hooks/use-ai-filter.js); [test_ai_filter_trace_values.py](../futureagi/model_hub/tests/test_ai_filter_trace_values.py); [test_ai_filter_dataset.py](../futureagi/model_hub/tests/test_ai_filter_dataset.py). |
 | `POST /model-hub/performance/{id}/`<br>`POST /model-hub/performance/detail/{id}/`<br>`POST /model-hub/performance/export/{id}/`<br>`POST /model-hub/performance/tag-distribution/{model_id}/`<br>`GET /model-hub/overview/`<br>`GET /model-hub/custom-models/`<br>`POST /model-hub/custom-metric/create/` | Legacy model-performance, overview, model-list, and metric-create actions changed through the shared ClickHouse read/error policy; they do not use tracing W0-W6 presets. | Performance detail is one-based, fixed at 30 rows with `is_next`; export is synchronous with no continuation; the other reads/controls are unpaged. | Dashboard Models `Performance`, overview summary, Models list, and `CreateUpdateCustomMetric`. | **Non-Cartesian and unqualified:** shared-helper/transport hardening is not route-level ten-second evidence, and synchronous export has no read-more contract. [performance.py](../futureagi/model_hub/views/performance.py); [overview.py](../futureagi/model_hub/views/overview.py); [custom_model.py](../futureagi/model_hub/views/custom_model.py); [metric.py](../futureagi/model_hub/views/metric.py); [Performance.jsx](../frontend/src/pages/dashboard/models/Performance/Performance.jsx). |
 | `POST /model-hub/optimize-dataset/{model_id}/`<br>`POST /model-hub/optimize-dataset/{model_id}/right-answers/{optimization_id}/`<br>`POST /model-hub/optimize-dataset/{model_id}/prompt-template-result/{optimization_id}/`<br>`POST /model-hub/optimize-dataset/{model_id}/prompt-template-explore/{optimization_id}/` | Optimization execution/results through the legacy ClickHouse read helper; no tracing window. | Right-answer and prompt-template-explore accept `page`/`limit` without a public maximum. Compatibility paths can return empty data on ClickHouse error; prompt-template result is not a cursor feed. | Optimize flow, `RightAnswerExplore`, `PromptTemplateResults`, and `PromptTemplateExplore`. | **Unqualified:** helper coverage is not endpoint-scale proof, paging is not publicly bounded, and empty-on-error compatibility is not a successful completeness contract. [optimize_dataset.py](../futureagi/model_hub/views/optimize_dataset.py); [RightAnswerExplore.jsx](../frontend/src/sections/model/optimize-detail/RightAnswerExplore.jsx); [PromptTemplateExplore.jsx](../frontend/src/sections/model/optimize-detail/PromptTemplateExplore.jsx); [PromptTemplateResults.jsx](../frontend/src/sections/model/optimize-detail/PromptTemplateResults.jsx). |
@@ -272,13 +275,44 @@ non-default filters, positive eval/annotation membership, and the F7
 attribute+eval+annotation conjunction are absent. None of those gaps can be
 closed without the exact-current-head successor result JSON.
 
+### Development mechanics smoke (not release qualification)
+
+The development server currently runs core
+`779c8927db4258489147c2041ef080f6346046da`, not stacked review head
+`a0b7eb6f28471cd40996caf392934a077b95cedc`; sampled route files differ and the
+older request dialect rejects current signed-cursor and typed-value payloads.
+It also contains no Whatfix, Colektia/Colly, or Mudflap project, workspace, or
+organization match. Consequently this run is mechanics evidence only and does
+not close a successor or named-population cell.
+
+Under read-only PostgreSQL and ClickHouse tripwires, the strongest local dense
+analogue exercised F0 trace page one/page two for W0-W6: all 14 calls returned
+five rows, had no page overlap, and completed in at most 286ms. W0 repeat and
+page four were stable and positive. Compatibility dense/sparse value calls
+completed in 334/125ms. Older-dialect sparse F2 page one/repeat/page two/page
+four completed in at most 207ms; dense F3 in at most 895ms; and F5 eval
+positive/negative page pairs in at most 461ms. The population has no annotation
+labels or Score rows, so F6 and F7 remain hard gaps, and F5 membership was not
+independently proven. The run recorded 424 PostgreSQL SELECTs and 200
+ClickHouse reads with zero database mutations or residual probe processes.
+
+Credential-free evidence is sealed on the dev host at
+`/home/ubuntu/th7247-api-dev-readonly-smoke-0814/`, manifest SHA-256
+`ff96c39a29187e792a85892ac9bba35bb81f513a406e4a36b06ec598ca1c18cd`.
+
 ### Evidence provenance
 
-The exact current release source is
-`e25fcf1286d318bc9694e786b6fb2c3c26daa1a8`. Its immutable backend and EE
-digests, source pins, offline verifier, fake-cluster tests, and strict server
-dry-run are green, but it has no live result JSON. The measurements below are
-historical only: their source anchors are core
+The exact API optimization source is
+`e25fcf1286d318bc9694e786b6fb2c3c26daa1a8`; catalog implementation parent
+`a0b7eb6f28471cd40996caf392934a077b95cedc` is followed only by this
+documentation update. No frontend consumer changed between the implementation
+heads. The only public-view additions are off-by-default,
+fail-open shadow calls in attribute-key and dashboard-filter-value reads, and
+the catalog reader's global contiguous-source fuse remains closed. The
+immutable e25f backend/EE digests, source pins, offline verifier, fake-cluster
+tests, and strict server dry-run are green, but neither e25f nor a0b has a
+successful live successor result JSON. The measurements below are historical
+only: their source anchors are core
 `c5d8c8852d23ee75b3edd37baf2549f030e789fc` and EE
 `45f8a5691297caba3acb74f0134b5ee6caa964b4`. Those historical immutable builds
 are:
@@ -345,7 +379,7 @@ cursor page is not a claim that its candidate population or ordering is exact.
 | Whatfix eval/annotator lists | Retained qualification runs exercised W1/W6 eval/annotator shapes under ten seconds; the slowest cold eval trace call was 8.498s. In the final annotator rerun, W1 trace/span/session took 89/80/112ms; W6 trace p1/p2 375/285ms, span 350/266ms, and session 605/487ms. Those annotator calls returned complete empty pages; W6 signed cursors advanced without overlap. | Timing, failure-boundary, and continuation behavior are qualified for the empty population. No positive matching row was observed, so F5-E/F6-A remain `C`, not `Y`. |
 | Whatfix eval/annotator graphs | From the no-overlay final digest, W6 `has_eval` trace returned complete HTTP 200 with 13 points in 1,626ms, and W6 `has_annotation` trace returned honest `sampled`/`sample_limit`, 13 points, HTTP 200 in 2,533ms. Earlier exact-overlay qualification also observed eval session/Users as honest `pending` in 30/24ms; W1 annotator trace complete with 8 points in 86ms and session/Users `pending` in 24/24ms; W6 annotator session/Users `pending` in 38/31ms. | The final artifact's trace graph result-state behavior is qualified for these W6 shapes. Pending session/Users graph data and positive eval/annotator membership remain unqualified. |
 | Full W0-W6 x F0-F7 matrix | Historical default list page one and page two were run for W1-W6, with W2-W5 repeated from the final immutable digest; selected W6 sparse/dense/system/combined plus W1/W6 eval/annotation shapes were also exercised. W0 has no live result. Unit/parity coverage exists for the shared compilers. | **Partial.** W0, W2-W5 non-default filters, most W2-W5 graphs, positive F5/F6 membership, F7 conjunctions, full Whatfix dense coverage, full Colektia sparse coverage, and Mudflap voice runtime evidence are missing. Compiler tests are not endpoint-scale proof. |
-| Explicit pre-existing and adjacent gaps | The PG base trace/span navigation and trace compare paths remain outside the bounded Observe selector. Project-version and prompt-metrics read more have the frontend defects documented above. Legacy Charts/Alerts, AI filter, dataset table, and simulation execution detail lack representative endpoint-scale matrices; eval-task lists/usage and eval-log detail still do work before pagination. | **Not TH-7247 release-qualified.** These must not inherit green status from nearby bounded selectors or from the final default-list smoke. |
+| Explicit pre-existing and adjacent gaps | The PG base trace/span navigation and trace compare paths remain outside the bounded Observe selector. Project-version and prompt-metrics read-more arithmetic is fixed, but their deep aggregate latency remains unqualified. Legacy Charts/Alerts, AI filter, dataset table, and simulation execution detail lack representative endpoint-scale matrices; eval-task lists/usage and eval-log detail still do work before pagination. | **Not TH-7247 release-qualified.** These must not inherit green status from nearby bounded selectors or from the final default-list smoke. |
 
 Production inspection used only standalone ClickHouse `SELECT`/`WITH` with a
 unique query ID, `readonly=2`, a ten-second-or-lower execution ceiling, finite

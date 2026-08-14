@@ -6,9 +6,15 @@ is deliberately not the complete 290-commit public-action inventory. The full
 changed API and frontend-consumer inventory, including graph, navigation,
 export, model-hub, annotation, and workflow actions that are not part of the
 Cartesian production gate, is maintained in
-[`TH7247_INTERACTIVE_READ_MATRIX.md`](TH7247_INTERACTIVE_READ_MATRIX.md). No
-property catalog, materialized view, Kafka consumer, span-table rewrite, or
-ingestion-path change is included.
+[`TH7247_INTERACTIVE_READ_MATRIX.md`](TH7247_INTERACTIVE_READ_MATRIX.md). The
+base API optimization at `e25fcf1286d318bc9694e786b6fb2c3c26daa1a8` did not
+include a property catalog or ingestion-path change. Catalog implementation
+parent `a0b7eb6f28471cd40996caf392934a077b95cedc` adds an independent catalog and
+direct/Kafka ingestion, but does not modify the existing spans table; this
+documentation-only successor changes no runtime source. Catalog API reads
+remain off by default and the contiguous-source qualification fuse is closed,
+so they do not change the public API contracts or latency evidence in this
+matrix.
 
 The contracts below are implementation inventory and release acceptance
 criteria, not evidence of a completed production run. At the superseded core
@@ -201,6 +207,9 @@ These are release gates, not claims that the pending live matrix has passed.
   Score history needs the later composite-index/catalog PR.
 - Dataset/simulation legacy value endpoints are outside this tracing/voice
   release matrix.
-- The later PostHog-style stacked PR will add independent ingestion-fed lookup
-  storage. It will not modify the existing spans table and will be designed to
-  avoid the prior materialized-view ingestion OOM failure mode.
+- The current PostHog-style stacked head adds independent ingestion-fed lookup
+  storage without modifying the existing spans table or using a materialized
+  view. Direct and Kafka ingestion are dev-qualified, but the reader is
+  deliberately inactive until a contiguous source fence, coverage, and shadow
+  parity are proven. These ingestion results therefore do not qualify any API
+  matrix cell.
