@@ -911,6 +911,162 @@ def _append_configured_filter_value_option(options, seen, choice):
     options.append({"value": raw_value, "label": str(raw_label)})
 
 
+def _annotation_categorical_filter_value_options(configured_options, stored_values):
+    """Build one deterministic union of configured and exhaustive Score values."""
+
+    options = []
+    configured_seen_values = set()
+    for option in configured_options or ():
+        _append_configured_filter_value_option(
+            options,
+            configured_seen_values,
+            option,
+        )
+
+    # Historic Score payloads have used scalar, list, and wrapper-object shapes.
+    # Preserve the established string-valued filter contract while sorting the
+    # stored-only suffix so an unchanged exhaustive read has a stable cursor
+    # content identity even though PostgreSQL intentionally performs no sort.
+    stored_only_values = set()
+    configured_strings = {str(option["value"]) for option in options}
+    for payload_value in stored_values or ():
+        try:
+            payload = json.loads(payload_value)
+        except (TypeError, ValueError):
+            payload = payload_value
+        raw_values = []
+        if isinstance(payload, dict):
+            selected = payload.get("selected")
+            if isinstance(selected, list):
+                raw_values.extend(selected)
+            elif selected not in (None, ""):
+                raw_values.append(selected)
+            for key in ("value", "label", "text"):
+                value = payload.get(key)
+                if value not in (None, ""):
+                    raw_values.append(value)
+        elif isinstance(payload, list):
+            raw_values.extend(payload)
+        elif payload not in (None, ""):
+            raw_values.append(payload)
+
+        for raw_value in raw_values:
+            if raw_value in (None, ""):
+                continue
+            value = str(raw_value)
+            if value and value not in configured_strings:
+                stored_only_values.add(value)
+
+    options.extend(
+        {"value": value, "label": value}
+        for value in sorted(
+            stored_only_values, key=lambda value: (value.casefold(), value)
+        )
+    )
+    return options
+
+
+def _annotation_filter_value_option_digest(option) -> str:
+    """Return a type-aware digest used to deduplicate project-batch values."""
+
+    identity = _configured_filter_value_identity(option["value"])
+    return _filter_value_digest(
+        json.dumps(identity, separators=(",", ":"), ensure_ascii=False)
+    )
+
+
+def _annotation_filter_value_content_digest(values) -> str:
+    """Bind an ordinal continuation to the complete current batch vocabulary."""
+
+    return _filter_value_digest(
+        json.dumps(
+            values,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    )
+
+
+def _batched_exact_annotation_filter_value_page(
+    cursor: _BatchedFilterValueCursor,
+    *,
+    page_size: int,
+    lane: str,
+    window_start: datetime,
+    window_end: datetime,
+    values: list[dict],
+    search: str,
+) -> dict:
+    """Page an exhaustive Score vocabulary across bounded project batches.
+
+    Each physical batch is reread exhaustively.  Its digest is carried in the
+    signed cursor, so a Score/config change invalidates an ordinal continuation
+    instead of silently skipping or repeating a value.  Server-side seen state
+    removes values already returned by earlier project batches.
+    """
+
+    filtered_values = _filter_value_options_for_search(values, search)
+    content_digest = _annotation_filter_value_content_digest(values)
+    physical_order = cursor.physical_order
+    if cursor.new_project_batch:
+        offset = 0
+    elif (
+        len(physical_order) != 2
+        or physical_order[0] != content_digest
+        or not isinstance(physical_order[1], int)
+        or physical_order[1] < 0
+        or physical_order[1] > len(filtered_values)
+    ):
+        raise ListCursorError(
+            "cursor_mismatch",
+            "The continuation cursor no longer matches the annotation values.",
+        )
+    else:
+        offset = physical_order[1]
+
+    seen_state, state_binding = _load_batched_filter_value_seen_state(
+        cursor,
+        page_size=page_size,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    page_values = []
+    appended_digests = []
+    next_offset = offset
+    while next_offset < len(filtered_values) and len(page_values) < page_size:
+        option = filtered_values[next_offset]
+        next_offset += 1
+        digest = _annotation_filter_value_option_digest(option)
+        if seen_state.contains(digest):
+            continue
+        page_values.append(option)
+        appended_digests.append(digest)
+
+    physical_has_more = next_offset < len(filtered_values)
+    has_more, browse_status, next_cursor = _encode_batched_filter_value_cursor(
+        cursor,
+        page_size=page_size,
+        window_start=window_start,
+        window_end=window_end,
+        seen_state=seen_state,
+        state_binding=state_binding,
+        appended_digests=appended_digests,
+        lane=lane,
+        physical_order=(content_digest, next_offset),
+        physical_has_more=physical_has_more,
+    )
+    return {
+        "values": page_values,
+        "query_complete": True,
+        "query_status": "complete",
+        "has_more": has_more,
+        "browse_status": browse_status,
+        "next_cursor": next_cursor,
+    }
+
+
 def _finite_filter_value_cursor_page(
     request,
     *,
@@ -3919,56 +4075,60 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
 
                 label_type = label.type
                 label_settings = label.settings or {}
+                batched_annotation_cursor = None
+                batched_annotation_lane = "annotation_categorical_values"
+                annotation_window_start = _FILTER_VALUE_RETAINED_START
+                annotation_window_end = datetime.now(UTC)
 
                 if label_type == "categorical":
-                    values = []
-                    configured_seen_values = set()
-                    for opt in label_settings.get("options", []):
-                        _append_configured_filter_value_option(
-                            values,
-                            configured_seen_values,
-                            opt,
+                    if page_size is not None and project_scope.batched:
+                        batched_annotation_cursor = _batched_filter_value_cursor(
+                            request,
+                            project_scope,
+                            deadline=filter_value_deadline,
+                            cursor_token=cursor_token,
+                            page_size=int(page_size),
+                            lane=batched_annotation_lane,
+                            query={
+                                "metric_name": metric_name,
+                                "metric_type": metric_type,
+                                "source": source,
+                                "search": search,
+                            },
                         )
-
-                    # The stored-Score vocabulary is a changing bounded sample,
-                    # not a snapshot. Never ordinal-page it: a Score write
-                    # between requests could otherwise move values around the
-                    # offset and cause a silent skip/repeat. Cursor callers get
-                    # every stable configured option plus explicit metadata that
-                    # historical stored-only discovery remains incomplete.
-                    if page_size is not None:
-                        return self._gm.success_response(
-                            _finite_filter_value_cursor_page(
-                                request,
-                                project_ids=finite_cursor_project_ids,
-                                query=finite_query,
-                                values=values,
-                                search=search,
-                                page_size=int(page_size),
-                                cursor_token=cursor_token,
-                                query_complete=False,
+                        project_scope = batched_annotation_cursor.scope
+                        project_ids = list(project_scope.project_ids)
+                        cursor_state = batched_annotation_cursor.cursor_state
+                        annotation_window_start = (
+                            cursor_state.window_start
+                            if cursor_state is not None
+                            else annotation_window_start
+                        )
+                        annotation_window_end = (
+                            cursor_state.window_end
+                            if cursor_state is not None
+                            else annotation_window_end
+                        )
+                        if not project_ids:
+                            return self._gm.success_response(
+                                _empty_batched_filter_value_payload(
+                                    batched_annotation_cursor,
+                                    page_size=int(page_size),
+                                    lane=batched_annotation_lane,
+                                    window_start=annotation_window_start,
+                                    window_end=annotation_window_end,
+                                )
                             )
-                        )
 
                     # Stored categorical choices are read from authoritative
                     # Score rows via tracer_project_id.  This avoids a cross-
-                    # cluster legacy-score/direct-span subquery.
-                    import json
+                    # cluster legacy-score/direct-span subquery. The source
+                    # returns only after its limit+1 sentinel proves that this
+                    # batch was exhausted; oversized histories fail closed.
 
                     from tracer.services.annotation_label_source import (
                         AnnotationLabelScoresProjectPG,
                     )
-
-                    seen_stored_values = {str(option["value"]) for option in values}
-
-                    def add_stored_value_option(raw_value):
-                        if raw_value in (None, ""):
-                            return
-                        value = str(raw_value)
-                        if not value or value in seen_stored_values:
-                            return
-                        seen_stored_values.add(value)
-                        values.append({"value": value, "label": value})
 
                     stored_values = _run_filter_value_pg_read(
                         filter_value_deadline,
@@ -3978,28 +4138,10 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                             )
                         ),
                     )
-                    for payload_value in stored_values:
-                        try:
-                            payload = json.loads(payload_value)
-                        except (TypeError, ValueError):
-                            payload = payload_value
-                        raw_values = []
-                        if isinstance(payload, dict):
-                            selected = payload.get("selected")
-                            if isinstance(selected, list):
-                                raw_values.extend(selected)
-                            elif selected not in (None, ""):
-                                raw_values.append(selected)
-                            for key in ("value", "label", "text"):
-                                val = payload.get(key)
-                                if val not in (None, ""):
-                                    raw_values.append(val)
-                        elif isinstance(payload, list):
-                            raw_values.extend(payload)
-                        elif payload not in (None, ""):
-                            raw_values.append(payload)
-                        for raw_value in raw_values:
-                            add_stored_value_option(raw_value)
+                    values = _annotation_categorical_filter_value_options(
+                        label_settings.get("options", []),
+                        stored_values,
+                    )
                 elif label_type == "star":
                     no_of_stars = label_settings.get("no_of_stars", 5)
                     values = [
@@ -4016,6 +4158,18 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                     values = []
 
                 if page_size is not None:
+                    if batched_annotation_cursor is not None:
+                        return self._gm.success_response(
+                            _batched_exact_annotation_filter_value_page(
+                                batched_annotation_cursor,
+                                page_size=int(page_size),
+                                lane=batched_annotation_lane,
+                                window_start=annotation_window_start,
+                                window_end=annotation_window_end,
+                                values=values,
+                                search=search,
+                            )
+                        )
                     return self._gm.success_response(
                         _finite_filter_value_cursor_page(
                             request,
