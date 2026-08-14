@@ -832,7 +832,7 @@ def test_timed_io_enforces_absolute_ten_second_select_deadline() -> None:
         io.select("SELECT 1", {}, role="source", settings={})
     assert time.monotonic() - started < 0.2
     assert source.query_calls[0][1]["transport_settings"] == {
-        "query_id": "th7247_catalog_backfill_work_worktoken"
+        "X-ClickHouse-Query-Id": "th7247_catalog_backfill_work_worktoken"
     }
     assert cancel.command_call[1]["parameters"] == {
         "query_id": "th7247_catalog_backfill_work_worktoken"
@@ -872,7 +872,7 @@ def test_timed_io_enforces_absolute_ten_second_insert_deadline_after_safe_target
             settings={},
         )
     assert len(client.insert_calls) == 1
-    assert "query_id" in client.insert_calls[0][1]["transport_settings"]
+    assert "X-ClickHouse-Query-Id" in client.insert_calls[0][1]["transport_settings"]
 
 
 def test_timed_io_routes_source_and_catalog_reads_to_distinct_clients() -> None:

@@ -734,7 +734,7 @@ class TimedCatalogBackfillIO:
                 sql,
                 parameters=dict(params),
                 settings=dict(settings),
-                transport_settings={"query_id": query_id},
+                transport_settings={"X-ClickHouse-Query-Id": query_id},
             ),
         )
         if hasattr(result, "named_results"):
@@ -778,7 +778,7 @@ class TimedCatalogBackfillIO:
                 column_names=list(columns),
                 column_type_names=list(CATALOG_INSERT_COLUMN_TYPES[unqualified]),
                 settings=dict(settings),
-                transport_settings={"query_id": query_id},
+                transport_settings={"X-ClickHouse-Query-Id": query_id},
             ),
         )
 
@@ -825,7 +825,9 @@ class TimedCatalogBackfillIO:
                             ),
                         )
                     },
-                    transport_settings={"query_id": self._new_query_id("cancel")},
+                    transport_settings={
+                        "X-ClickHouse-Query-Id": self._new_query_id("cancel")
+                    },
                 )
                 cancellation.put(None)
             except BaseException as exc:
