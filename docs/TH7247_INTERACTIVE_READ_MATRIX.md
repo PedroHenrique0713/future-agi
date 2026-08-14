@@ -294,7 +294,8 @@ four completed in at most 207ms; dense F3 in at most 895ms; and F5 eval
 positive/negative page pairs in at most 461ms. The population has no annotation
 labels or Score rows, so F6 and F7 remain hard gaps, and F5 membership was not
 independently proven. The run recorded 424 PostgreSQL SELECTs and 200
-ClickHouse reads with zero database mutations or residual probe processes.
+ClickHouse reads with zero database mutations. Its credential-content and
+credential-filename scans were clean.
 
 Credential-free evidence is sealed on the dev host at
 `/home/ubuntu/th7247-api-dev-readonly-smoke-0814/`, manifest SHA-256
