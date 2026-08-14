@@ -190,6 +190,7 @@ def test_run_builds_four_bounded_clients_closes_all_and_renders_json() -> None:
         "connect_timeout": 5,
         "send_receive_timeout": 10.0,
         "query_retries": 0,
+        "autogenerate_query_id": False,
     }
     assert clients[1].kwargs["host"] == "catalog-dev"
     assert clients[1].kwargs["secure"] is True

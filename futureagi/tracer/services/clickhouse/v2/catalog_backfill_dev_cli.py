@@ -314,6 +314,7 @@ def _connect(client_factory: Callable[..., Any], endpoint: Endpoint) -> Any:
         connect_timeout=min(5, int(MAX_CLICKHOUSE_CALL_SECONDS)),
         send_receive_timeout=MAX_CLICKHOUSE_CALL_SECONDS,
         query_retries=0,
+        autogenerate_query_id=False,
     )
 
 

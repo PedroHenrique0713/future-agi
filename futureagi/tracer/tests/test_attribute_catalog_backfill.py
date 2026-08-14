@@ -950,6 +950,7 @@ def test_management_command_pins_dev_ack_scope_and_bounded_transport() -> None:
     assert '"send_receive_timeout": MAX_CLICKHOUSE_CALL_SECONDS' in source
     assert '"connect_timeout": min(5, int(MAX_CLICKHOUSE_CALL_SECONDS))' in source
     assert '"query_retries": 0' in source
+    assert '"autogenerate_query_id": False' in source
     assert (
         "source_cancel_client = clickhouse_connect.get_client(**source_kwargs)"
         in source

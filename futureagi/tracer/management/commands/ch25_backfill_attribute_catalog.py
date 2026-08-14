@@ -136,6 +136,7 @@ class Command(BaseCommand):
                 "connect_timeout": min(5, int(MAX_CLICKHOUSE_CALL_SECONDS)),
                 "send_receive_timeout": MAX_CLICKHOUSE_CALL_SECONDS,
                 "query_retries": 0,
+                "autogenerate_query_id": False,
             }
             catalog_kwargs = {
                 "host": catalog_config["host"],
@@ -147,6 +148,7 @@ class Command(BaseCommand):
                 "connect_timeout": min(5, int(MAX_CLICKHOUSE_CALL_SECONDS)),
                 "send_receive_timeout": MAX_CLICKHOUSE_CALL_SECONDS,
                 "query_retries": 0,
+                "autogenerate_query_id": False,
             }
             source_client = clickhouse_connect.get_client(**source_kwargs)
             catalog_client = clickhouse_connect.get_client(**catalog_kwargs)
