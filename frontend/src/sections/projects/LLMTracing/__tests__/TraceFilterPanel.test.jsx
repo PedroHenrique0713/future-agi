@@ -295,6 +295,30 @@ describe("TraceFilterPanel AI apply: additive, empty, single-call", () => {
     document.body.removeChild(anchorEl);
   });
 
+  it("does not apply an ungrounded fallback when smart grounding rejects", async () => {
+    parseQueryMock.mockRejectedValue(
+      new Error("AI value grounding needs a more specific value."),
+    );
+    const { anchorEl, onApply, onClose } = renderPanel({
+      properties,
+      projectId: "00000000-0000-4000-8000-000000000001",
+    });
+
+    const aiInput = screen.getByPlaceholderText(/Ask AI/i);
+    fireEvent.change(aiInput, { target: { value: "model gpt" } });
+    fireEvent.keyDown(aiInput, { key: "Enter" });
+
+    await waitFor(() => expect(parseQueryMock).toHaveBeenCalledTimes(1));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(aiInput.value).toBe("model gpt");
+    expect(
+      screen.queryByText(/Could not derive filters from that query/i),
+    ).not.toBeInTheDocument();
+
+    document.body.removeChild(anchorEl);
+  });
+
   it("clears the empty-result caption when the user edits the query", async () => {
     parseQueryMock.mockResolvedValue([]);
     const { anchorEl } = renderPanel({ properties });

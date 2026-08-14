@@ -3169,13 +3169,21 @@ const TraceFilterPanel = ({
     () =>
       properties
         .filter((p) => p.category !== "attribute")
-        .map((p) => ({
-          field: p.id,
-          label: p.name,
-          category: p.category,
-          type: p.type || "string",
-          operators: getOperators(p.type).map((o) => o.value),
-        })),
+        .map((p) => {
+          const type = ["number", "integer", "float"].includes(p.type)
+            ? "number"
+            : "string";
+          return {
+            field: p.id,
+            label: p.name,
+            category: p.category,
+            type,
+            operators: getOperators(p.type).map((o) => o.value),
+            ...(Array.isArray(p.choices) && p.choices.length
+              ? { choices: p.choices }
+              : {}),
+          };
+        }),
     [properties],
   );
   const {
@@ -3646,11 +3654,16 @@ const TraceFilterPanel = ({
   const handleAiFilter = useCallback(async () => {
     if (!aiQuery.trim()) return;
     setAiEmpty(false);
-    const aiFilters = await aiParseQuery(aiQuery, {
-      smart: true,
-      projectId: observeId,
-      source,
-    });
+    let aiFilters;
+    try {
+      aiFilters = await aiParseQuery(aiQuery, {
+        smart: true,
+        projectId: observeId,
+        source,
+      });
+    } catch {
+      return;
+    }
     if (aiFilters.length > 0) {
       const aiRows = aiFilters.map((f) => {
         // Attribute fields are intentionally excluded from aiFilterSchema;
