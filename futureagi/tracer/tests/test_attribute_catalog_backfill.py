@@ -396,6 +396,7 @@ def test_source_and_checkpoint_sql_pin_select_only_keyset_and_bounds() -> None:
     assert "projected_array_values_fit" in payload_sql
     assert "selectable_projection_complete" in payload_sql
     assert "jsonextractstring(member)" in payload_sql
+    assert "jsontype(member)) in ('float64', 'double')" in payload_sql
     assert "isfinite(jsonextractfloat(member))" in payload_sql
     assert "argmax(" in payload_sql
     assert "catalog_source_identities" in payload_sql
@@ -680,6 +681,36 @@ def test_projected_key_only_attributes_are_complete_without_value_rows() -> None
         "not_finite",
         "scalar_extra",
     } & set(value_keys)
+
+
+@pytest.mark.parametrize("json_type", ["Float64", "Double"])
+def test_clickhouse_float_json_type_aliases_are_complete_key_only_metadata(
+    json_type: str,
+) -> None:
+    """CH25 reports JSON floating scalars as ``Double`` on real DEV rows."""
+
+    row = _projected_source_row("span-1")
+    row.update(
+        {
+            "source_attribute_entries": 1,
+            "source_attribute_bytes": 64,
+            "attrs_string_projection": [],
+            "attrs_number": {},
+            "attrs_bool": {},
+            "attributes_extra_projection": [
+                ("floating_scalar", json_type, 1, []),
+            ],
+        }
+    )
+    io = FakeIO(pages=[[row]])
+
+    summary = _run(io)
+
+    assert summary.windows_completed == 1
+    assert summary.windows_gap == 0
+    assert summary.gap_rows == 0
+    assert summary.key_rows == 1
+    assert summary.value_rows == 0
 
 
 def test_oversized_typed_string_is_complete_key_only_picker_metadata() -> None:

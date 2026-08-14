@@ -452,7 +452,7 @@ WITH projected_rows AS
                         )
                         OR toString(JSONType(member)) IN ('Int64', 'UInt64', 'Bool')
                         OR (
-                            toString(JSONType(member)) = 'Float64'
+                            toString(JSONType(member)) IN ('Float64', 'Double')
                             AND isFinite(JSONExtractFloat(member))
                         ),
                     if(
@@ -1846,6 +1846,7 @@ def _parse_projected_source_attributes(
                     "Int64",
                     "UInt64",
                     "Float64",
+                    "Double",
                     "Bool",
                     "Null",
                 }:
