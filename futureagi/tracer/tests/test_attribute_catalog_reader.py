@@ -120,7 +120,14 @@ def _coverage(project_id=PROJECT_A, **overrides):
     return row
 
 
-def _key_row(key, attribute_type, *, first_seen=None, last_seen=None):
+def _key_row(
+    key,
+    attribute_type,
+    *,
+    first_seen=None,
+    last_seen=None,
+    total_count=1,
+):
     ranks = {
         "string": 1,
         "number": 2,
@@ -139,6 +146,7 @@ def _key_row(key, attribute_type, *, first_seen=None, last_seen=None):
         "attribute_type_rank": ranks[attribute_type],
         "first_seen": first_seen or WINDOW_START,
         "last_seen": last_seen or WINDOW_END - timedelta(microseconds=1),
+        "total_count": total_count,
     }
 
 
@@ -226,6 +234,22 @@ def test_catalog_database_does_not_match_an_allowlisted_table_prefix():
             "SELECT * FROM span_attribute_key_catalog_backup",
             "isolated_catalog_dev",
         )
+
+
+def test_catalog_window_bounds_are_explicit_datetime64_microseconds():
+    for sql_name in ("_CHECKPOINT_SQL", "_KEY_PAGE_SQL", "_VALUE_PAGE_SQL"):
+        sql = getattr(reader_module, sql_name)
+        assert (
+            "fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC')" in sql
+        )
+        assert "fromUnixTimestamp64Micro(%(catalog_window_end_us)s, 'UTC')" in sql
+        assert "%(catalog_window_start)s" not in sql
+        assert "%(catalog_window_end)s" not in sql
+    assert "greatest(" in reader_module._CHECKPOINT_SQL
+    assert "ifNull(" in reader_module._CHECKPOINT_SQL
+
+    subsecond = WINDOW_START + timedelta(microseconds=123_456)
+    assert reader_module._unix_microseconds(subsecond) == _micros(subsecond)
 
 
 @pytest.mark.parametrize(
@@ -608,15 +632,16 @@ def test_equal_max_version_checkpoint_conflict_fails_closed():
 
 def test_frozen_key_epoch_returns_a_continuable_page():
     key_rows = (
-        _key_row("Alpha", "string"),
-        _key_row("alpha", "number"),
-        _key_row("Beta", "boolean"),
+        _key_row("Alpha", "string", total_count=3),
+        _key_row("alpha", "number", total_count=3),
+        _key_row("Beta", "boolean", total_count=3),
     )
     reader, executor = _reader(_successful_responder(key_rows=key_rows))
 
     result = reader.read_key_candidates(page_size=2)
 
     assert isinstance(result, CatalogKeyPage)
+    assert result.total_count == 3
     assert [(row.attribute_key, row.attribute_type) for row in result.candidates] == [
         ("Alpha", "string"),
         ("alpha", "number"),
@@ -636,6 +661,8 @@ def test_frozen_key_epoch_returns_a_continuable_page():
         "json",
     )
     assert key_call.params["catalog_page_limit"] == 18
+    assert key_call.params["catalog_window_start_us"] == _micros(WINDOW_START)
+    assert key_call.params["catalog_window_end_us"] == _micros(WINDOW_END)
     assert key_call.settings["max_result_rows"] == 18
     assert "ORDER BY key_folded ASC, attribute_key ASC" in key_call.sql
     assert "key_folded LIKE %(catalog_key_search_pattern)s" in key_call.sql

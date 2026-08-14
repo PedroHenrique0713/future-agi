@@ -8572,6 +8572,7 @@ def test_span_attribute_keys_contract_accepts_exact_probe_and_read_state():
         "query_error_code",
         "query_window_start",
         "query_window_end",
+        "total_count",
         "has_more",
         "next_cursor",
         "browse_mode",
@@ -10407,6 +10408,23 @@ def test_attribute_cursor_continues_retained_bound_operation_budget():
     assert page.has_more is False
     assert page.metadata.query_count == len(executor.calls)
     assert page.metadata.query_count >= 2
+
+
+def test_value_cursor_continue_without_prior_metadata_starts_operation_budget():
+    executor = RecordingExecutor()
+
+    page = AttributeReadSelector(executor, now=NOW).read_value_cursor_page(
+        [PROJECT_A],
+        "model",
+        page_size=10,
+        window_start=NOW - timedelta(microseconds=1),
+        window_end=NOW,
+        continue_operation=True,
+    )
+
+    assert page.has_more is False
+    assert page.metadata.query_complete is True
+    assert page.metadata.query_count == len(executor.calls)
 
 
 def test_attribute_retained_bound_budget_falls_back_without_starving_cursor(

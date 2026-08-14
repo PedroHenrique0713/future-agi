@@ -184,6 +184,10 @@ class CatalogKeyPage:
     next_checkpoint: CatalogKeyCheckpoint | None
     qualification: CatalogQualification
     query_count: int = 0
+    # Exact distinct-key cardinality for the immutable filtered catalog scope.
+    # Search reads keep this unset because Python's Unicode casefold contract is
+    # intentionally broader than ClickHouse's indexed ASCII-fold superset.
+    total_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,8 +393,8 @@ WITH checkpoint_rows AS
     FROM span_attribute_catalog_checkpoints
     PREWHERE project_id IN %(catalog_project_ids)s
       AND catalog_epoch = %(catalog_epoch)s
-    WHERE window_start < %(catalog_window_end)s
-      AND window_end > %(catalog_window_start)s
+    WHERE window_start < fromUnixTimestamp64Micro(%(catalog_window_end_us)s, 'UTC')
+      AND window_end > fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC')
 ), latest_checkpoints AS
 (
     SELECT
@@ -467,8 +471,11 @@ SELECT
     ) AS checkpoint_fences,
     countIf(
         window_start > greatest(
-            %(catalog_window_start)s,
-            ifNull(prior_coverage_end, %(catalog_window_start)s)
+            fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC'),
+            ifNull(
+                prior_coverage_end,
+                fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC')
+            )
         )
     ) AS interior_gap_count
 FROM ordered_checkpoints
@@ -494,18 +501,30 @@ WITH grouped_keys AS
     WHERE key_folded LIKE %(catalog_key_search_pattern)s
        OR length(key_folded) != lengthUTF8(key_folded)
     GROUP BY key_folded, attribute_key, attribute_type
+), eligible_keys AS
+(
+    SELECT
+        key_folded,
+        attribute_key,
+        attribute_type,
+        toInt8(attribute_type) AS attribute_type_rank,
+        first_seen,
+        last_seen,
+        uniqExact(attribute_key) OVER () AS total_count
+    FROM grouped_keys
+    WHERE first_seen < fromUnixTimestamp64Micro(%(catalog_window_end_us)s, 'UTC')
+      AND last_seen >= fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC')
 )
 SELECT
     key_folded,
     attribute_key,
     toString(attribute_type) AS attribute_type,
-    toInt8(attribute_type) AS attribute_type_rank,
+    attribute_type_rank,
     first_seen,
-    last_seen
-FROM grouped_keys
-WHERE first_seen < %(catalog_window_end)s
-  AND last_seen >= %(catalog_window_start)s
-  AND tuple(key_folded, attribute_key, attribute_type_rank) > tuple(
+    last_seen,
+    total_count
+FROM eligible_keys
+WHERE tuple(key_folded, attribute_key, attribute_type_rank) > tuple(
       %(catalog_after_key_folded)s,
       %(catalog_after_key)s,
       %(catalog_after_key_type_rank)s
@@ -559,8 +578,8 @@ SELECT
     first_seen,
     last_seen
 FROM ordered_values
-WHERE first_seen < %(catalog_window_end)s
-  AND last_seen >= %(catalog_window_start)s
+WHERE first_seen < fromUnixTimestamp64Micro(%(catalog_window_end_us)s, 'UTC')
+  AND last_seen >= fromUnixTimestamp64Micro(%(catalog_window_start_us)s, 'UTC')
   AND (
       attribute_type IN %(catalog_attribute_types)s
   )
@@ -671,8 +690,8 @@ class AttributeCatalogReader:
         params = {
             "catalog_project_ids": self.project_ids,
             "catalog_epoch": self.catalog_epoch,
-            "catalog_window_start": self.window_start,
-            "catalog_window_end": self.window_end,
+            "catalog_window_start_us": _unix_microseconds(self.window_start),
+            "catalog_window_end_us": _unix_microseconds(self.window_end),
             "catalog_checkpoint_limit": CATALOG_MAX_PROJECTS + 1,
         }
         try:
@@ -768,13 +787,19 @@ class AttributeCatalogReader:
         matched_keys: list[str] = []
         matched_key_set: set[str] = set()
         last_emitted_position: tuple[str, str, int] | None = None
+        # The SQL total is computed before the keyset predicate, so every page
+        # of the immutable epoch reports the same distinct-key cardinality.
+        # The indexed search predicate deliberately admits every non-ASCII key
+        # for Python casefold rechecking; do not mislabel that superset count as
+        # exact for searched pages.
+        total_count: int | None = None
         try:
             while len(matched_keys) <= limit:
                 params = {
                     "catalog_project_ids": self.project_ids,
                     "catalog_epoch": self.catalog_epoch,
-                    "catalog_window_start": self.window_start,
-                    "catalog_window_end": self.window_end,
+                    "catalog_window_start_us": _unix_microseconds(self.window_start),
+                    "catalog_window_end_us": _unix_microseconds(self.window_end),
                     "catalog_key_attribute_types": types,
                     "catalog_key_search_pattern": _like_contains_pattern(
                         normalized_search
@@ -793,6 +818,12 @@ class AttributeCatalogReader:
                 previous_position = after_position
                 stop = False
                 for row in rows:
+                    if not normalized_search:
+                        row_total_count = _strict_int(row.get("total_count"))
+                        if total_count is None:
+                            total_count = row_total_count
+                        elif total_count != row_total_count:
+                            raise ValueError("catalog key total changed within page")
                     candidate = self._decode_key_row(row)
                     if candidate.attribute_type not in types:
                         raise ValueError("catalog key type escaped query filter")
@@ -825,6 +856,9 @@ class AttributeCatalogReader:
         except Exception:
             return CatalogUnavailable("key_candidate_query_error", _KEY_SOURCE)
 
+        if not normalized_search and total_count is None and after is None:
+            total_count = 0
+
         has_more = len(matched_keys) > limit
         next_checkpoint = None
         if has_more and candidates and last_emitted_position is not None:
@@ -848,6 +882,7 @@ class AttributeCatalogReader:
             next_checkpoint=next_checkpoint,
             qualification=qualification,
             query_count=budget.query_count,
+            total_count=total_count,
         )
 
     def read_value_candidates(
@@ -917,8 +952,8 @@ class AttributeCatalogReader:
                 params = {
                     "catalog_project_ids": self.project_ids,
                     "catalog_epoch": self.catalog_epoch,
-                    "catalog_window_start": self.window_start,
-                    "catalog_window_end": self.window_end,
+                    "catalog_window_start_us": _unix_microseconds(self.window_start),
+                    "catalog_window_end_us": _unix_microseconds(self.window_end),
                     "catalog_attribute_key": key,
                     "catalog_attribute_types": types,
                     "catalog_value_search_pattern": _indexed_value_search_pattern(

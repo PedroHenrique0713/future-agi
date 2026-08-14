@@ -3685,7 +3685,12 @@ class AttributeReadSelector:
         a key-bound latest-state fallback.
         """
 
-        if not continue_operation:
+        # DEV's immutable snapshot already supplies the retained window, so a
+        # fallback cursor can legitimately ask to continue an operation before
+        # this selector ran the optional retained-bound metadata read. Preserve
+        # a real shared budget when one exists; otherwise start the cursor's
+        # public operation here instead of reaching deadline checks with None.
+        if not continue_operation or self._deadline is None:
             self._begin_operation()
         projects = self._project_ids(project_ids)
         if exact_key is not None:
@@ -4735,7 +4740,7 @@ class AttributeReadSelector:
         partial cursor.
         """
 
-        if not continue_operation:
+        if not continue_operation or self._deadline is None:
             self._begin_operation()
         projects = self._project_ids(project_ids)
         key = validate_attribute_key(key)

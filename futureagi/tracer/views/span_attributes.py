@@ -682,6 +682,12 @@ class SpanAttributeKeysView(APIView):
                             ],
                             **metadata.public_payload(),
                             "query_count": catalog_page.query_count,
+                            **(
+                                {"total_count": catalog_page.total_count}
+                                if catalog_page.total_count is not None
+                                and not workspace_scope
+                                else {}
+                            ),
                             **catalog_snapshot_metadata(
                                 window_start=window_start,
                                 window_end=window_end,

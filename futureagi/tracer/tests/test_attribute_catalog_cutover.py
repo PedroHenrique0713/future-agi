@@ -45,7 +45,9 @@ def _qualification() -> CatalogQualification:
     )
 
 
-def _key_page(*, key: str = "catalog.key", has_more: bool = False) -> CatalogKeyPage:
+def _key_page(
+    *, key: str = "catalog.key", has_more: bool = False, total_count: int = 37
+) -> CatalogKeyPage:
     checkpoint = None
     if has_more:
         checkpoint = CatalogKeyCheckpoint(
@@ -81,6 +83,7 @@ def _key_page(*, key: str = "catalog.key", has_more: bool = False) -> CatalogKey
         has_more=has_more,
         next_checkpoint=checkpoint,
         qualification=_qualification(),
+        total_count=total_count,
     )
 
 
@@ -405,6 +408,45 @@ def test_span_key_view_publishes_catalog_rows_with_unchanged_payload_shape(
     assert response.data["has_more"] is False
     assert response.data["next_cursor"] is None
     assert response.data["query_complete"] is True
+    assert response.data["total_count"] == 37
+
+
+@pytest.mark.unit
+def test_span_key_workspace_catalog_page_does_not_publish_batch_local_total(
+    monkeypatch,
+):
+    from tracer.views import span_attributes
+
+    monkeypatch.setattr(
+        span_attributes,
+        "_workspace_project_batch",
+        lambda _request: ((PROJECT_ID,), False),
+    )
+    monkeypatch.setattr(
+        span_attributes,
+        "_run_span_attribute_pg_read",
+        lambda _deadline, operation: operation(),
+    )
+    monkeypatch.setattr(
+        span_attributes,
+        "try_catalog_key_page",
+        lambda **_kwargs: cutover.CatalogReadAttempt(True, _key_page(total_count=37)),
+    )
+    monkeypatch.setattr(
+        span_attributes,
+        "AttributeReadSelector",
+        lambda **_kwargs: pytest.fail("catalog success must not query spans"),
+    )
+    request = _authenticated_get(
+        "/api/traces/span-attribute-keys/",
+        {"workspace_scope": True, "page_size": 10},
+    )
+
+    response = span_attributes.SpanAttributeKeysView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response["X-FutureAGI-Attribute-Catalog"] == "catalog"
+    assert "total_count" not in response.data
 
 
 @pytest.mark.unit
