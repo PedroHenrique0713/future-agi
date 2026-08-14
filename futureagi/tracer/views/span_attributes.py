@@ -57,6 +57,9 @@ from tracer.services.clickhouse.read_budget import (
     ReadDeadlineExceeded,
     is_clickhouse_api_read_unavailable_error,
 )
+from tracer.services.clickhouse.v2.attribute_catalog_shadow import (
+    run_catalog_key_shadow,
+)
 from tracer.services.exact_aggregation_cache import read_or_schedule_exact_snapshot
 from tracer.utils.workspace_scope import project_queryset_for_request
 
@@ -226,6 +229,21 @@ def _attribute_key_payload(row) -> dict:
     # is not an exact tenant-wide total unless a future exact endpoint says so.
     payload["count_exact"] = False
     return payload
+
+
+def _run_catalog_key_shadow_fail_open(**kwargs) -> None:
+    """Keep every catalog shadow defect outside the public API boundary."""
+
+    try:
+        run_catalog_key_shadow(**kwargs)
+    except Exception as exc:
+        # The shadow helper is already fail-open. This second boundary protects
+        # the response even if instrumentation or a test replacement regresses.
+        logger.warning(
+            "span_attribute_catalog_shadow_boundary_error",
+            surface="span_attribute_keys",
+            error_type=type(exc).__name__,
+        )
 
 
 class SpanAttributeKeysView(APIView):
@@ -603,8 +621,7 @@ class SpanAttributeKeysView(APIView):
                         order=next_order,
                         seen_rows=seen_state.seen_count + len(appended_digests),
                     )
-                return Response(
-                    {
+                payload = {
                         # Cursor browse counts only describe occurrences inside
                         # the bounded physical prefix used to discover this
                         # suggestion.  Never present them as exact tenant-wide
@@ -628,9 +645,18 @@ class SpanAttributeKeysView(APIView):
                             if exact_key is not None
                             else {}
                         ),
-                    },
-                    status=200,
+                    }
+                _run_catalog_key_shadow_fail_open(
+                    project_ids=project_ids,
+                    authoritative_rows=page_read.rows,
+                    window_start=window_start,
+                    window_end=window_end,
+                    page_size=page_size,
+                    search=exact_key,
+                    continuation=bool(cursor_token),
+                    request_deadline=request_deadline,
                 )
+                return Response(payload, status=200)
 
             # The retained-data cursor above is the exhaustive path. Keep this
             # compatibility exact-q endpoint on its production-qualified
@@ -659,8 +685,7 @@ class SpanAttributeKeysView(APIView):
                     "Span attribute keys are temporarily unavailable. Please retry.",
                     code="service_unavailable",
                 )
-            return Response(
-                {
+            payload = {
                     "result": [_attribute_key_payload(row) for row in read.rows],
                     **read.metadata.public_payload(),
                     **(
@@ -673,9 +698,16 @@ class SpanAttributeKeysView(APIView):
                         if exact_key is not None
                         else {}
                     ),
-                },
-                status=200,
+                }
+            _run_catalog_key_shadow_fail_open(
+                project_ids=(project_id,),
+                authoritative_rows=read.rows,
+                window_start=read.metadata.query_window_start,
+                window_end=read.metadata.query_window_end,
+                search=exact_key,
+                request_deadline=request_deadline,
             )
+            return Response(payload, status=200)
         except AttributeCursorStateError as exc:
             if exc.code == "cursor_state_unavailable":
                 return self._gm.custom_error_response(

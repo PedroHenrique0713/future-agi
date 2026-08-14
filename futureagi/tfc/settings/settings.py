@@ -882,6 +882,28 @@ CLICKHOUSE_V2 = {
     "QUERY_TYPES_DISABLED": os.getenv("CH25_QUERY_TYPES_DISABLED", ""),
 }
 
+# Span-attribute catalog reads are additive observations only. ``off`` is the
+# production-safe default; ``shadow`` runs the catalog candidate reader after
+# the authoritative spans selector and can never change its response. The
+# epoch stays independently explicit so a mode typo or a stale writer epoch
+# cannot admit catalog rows accidentally.
+SPAN_ATTRIBUTE_CATALOG_READ_MODE = os.getenv(
+    "SPAN_ATTRIBUTE_CATALOG_READ_MODE", "off"
+).strip().lower()
+SPAN_ATTRIBUTE_CATALOG_DATABASE = os.getenv(
+    "SPAN_ATTRIBUTE_CATALOG_DATABASE", ""
+).strip()
+if SPAN_ATTRIBUTE_CATALOG_READ_MODE not in {"off", "shadow"}:
+    raise ValueError("SPAN_ATTRIBUTE_CATALOG_READ_MODE must be off or shadow")
+try:
+    SPAN_ATTRIBUTE_CATALOG_EPOCH = int(
+        os.getenv("SPAN_ATTRIBUTE_CATALOG_EPOCH", "0")
+    )
+except ValueError as exc:
+    raise ValueError("SPAN_ATTRIBUTE_CATALOG_EPOCH must be a UInt16") from exc
+if not 0 <= SPAN_ATTRIBUTE_CATALOG_EPOCH <= 65_535:
+    raise ValueError("SPAN_ATTRIBUTE_CATALOG_EPOCH must be a UInt16")
+
 # Fail-closed: rollup routing requires both flag=on and window >= coverage date.
 # Set COVERED_SINCE (ISO-8601) after running rebuild_dashboard_attr_rollup.
 DASHBOARD_ATTR_ROLLUP_ENABLED = (

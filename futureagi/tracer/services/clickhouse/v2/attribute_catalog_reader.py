@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ CATALOG_MAX_SEARCH_BYTES = 512
 CATALOG_MAX_VALUE_SEARCH_TEXT_BYTES = 4_096
 CATALOG_MAX_VALUE_JSON_BYTES = 32 * 1024
 CATALOG_QUERY_TIMEOUT_MS = 2_000
+CATALOG_MAX_DATABASE_NAME_BYTES = 128
 
 # Schema 025 has no authoritative contiguous producer/source fence. Keep all
 # qualification unavailable until a later schema+writer change supplies and
@@ -78,6 +80,13 @@ _ALL_ATTRIBUTE_TYPES = tuple(
 _KEY_SOURCE = "span_attribute_catalog.keys.v1"
 _VALUE_SOURCE = "span_attribute_catalog.values.v1"
 _QUALIFICATION_SOURCE = "span_attribute_catalog.qualification.v1"
+_CATALOG_TABLES = (
+    "span_attribute_catalog_activations",
+    "span_attribute_catalog_checkpoints",
+    "span_attribute_key_catalog",
+    "span_attribute_value_catalog",
+)
+_DATABASE_RE = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class _Result(Protocol):
@@ -451,6 +460,7 @@ class AttributeCatalogReader:
         catalog_epoch: int,
         window_start: datetime,
         window_end: datetime,
+        catalog_database: str | None = None,
     ) -> None:
         self._executor = executor
         self.project_ids = _canonical_project_ids(project_ids)
@@ -461,6 +471,17 @@ class AttributeCatalogReader:
         self.window_end = _aware_utc(window_end, "window_end")
         if self.window_start >= self.window_end:
             raise ValueError("catalog window must be a non-empty half-open interval")
+        self.catalog_database = _catalog_database(catalog_database)
+        self._activation_sql = _qualify_catalog_sql(
+            _ACTIVATION_SQL, self.catalog_database
+        )
+        self._checkpoint_sql = _qualify_catalog_sql(
+            _CHECKPOINT_SQL, self.catalog_database
+        )
+        self._key_page_sql = _qualify_catalog_sql(_KEY_PAGE_SQL, self.catalog_database)
+        self._value_page_sql = _qualify_catalog_sql(
+            _VALUE_PAGE_SQL, self.catalog_database
+        )
         self.project_scope_fingerprint = _scope_fingerprint(self.project_ids)
 
     def qualify(self) -> CatalogQualificationResult:
@@ -475,7 +496,7 @@ class AttributeCatalogReader:
         }
         try:
             activation_rows = self._execute(
-                _ACTIVATION_SQL,
+                self._activation_sql,
                 params,
                 max_result_rows=CATALOG_MAX_PROJECTS + 1,
             )
@@ -498,7 +519,7 @@ class AttributeCatalogReader:
         }
         try:
             checkpoint_rows = self._execute(
-                _CHECKPOINT_SQL,
+                self._checkpoint_sql,
                 params,
                 max_result_rows=CATALOG_MAX_PROJECTS + 1,
             )
@@ -577,7 +598,7 @@ class AttributeCatalogReader:
         }
         try:
             rows = self._execute(
-                _KEY_PAGE_SQL,
+                self._key_page_sql,
                 params,
                 max_result_rows=limit + 1,
             )
@@ -681,7 +702,7 @@ class AttributeCatalogReader:
         }
         try:
             rows = self._execute(
-                _VALUE_PAGE_SQL,
+                self._value_page_sql,
                 params,
                 max_result_rows=limit + 1,
             )
@@ -1116,6 +1137,46 @@ def _aware_utc(value: datetime, label: str) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None:
         raise ValueError(f"{label} must be a timezone-aware datetime")
     return value.astimezone(UTC)
+
+
+def _catalog_database(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not _DATABASE_RE.fullmatch(value)
+        or len(value.encode("utf-8")) > CATALOG_MAX_DATABASE_NAME_BYTES
+        or value.lower() in {"system", "information_schema"}
+    ):
+        raise ValueError("catalog_database must be a simple non-system identifier")
+    return value
+
+
+def _qualify_catalog_sql(sql: str, database: str | None) -> str:
+    """Qualify only the four closed catalog-table names.
+
+    Dev keeps the additive catalog in an isolated database so neither schema
+    application nor catalog credentials need access to an existing table.
+    Production may leave this unset when the reviewed replicated tables are
+    eventually installed in the CH25 application database.
+    """
+
+    database = _catalog_database(database)
+    if database is None:
+        return sql
+    qualified = sql
+    replacement_count = 0
+    for table in _CATALOG_TABLES:
+        table_reference = re.compile(rf"\bFROM[ \t]+{re.escape(table)}(?=[ \t\r\n]|$)")
+        qualified, count = table_reference.subn(
+            f"FROM `{database}`.`{table}`",
+            qualified,
+        )
+        if count:
+            replacement_count += count
+    if replacement_count != 1:
+        raise ValueError("catalog SQL must reference exactly one allowlisted table")
+    return qualified
 
 
 def _row_datetime(value: Any) -> datetime:

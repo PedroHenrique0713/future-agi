@@ -84,6 +84,12 @@ CLICKHOUSE_V2 = {
     "QUERY_TYPES_DISABLED": os.environ.get("CH25_QUERY_TYPES_DISABLED", ""),
 }
 
+# Tests exercise shadow routing only through explicit ``override_settings``.
+# Keep the process default identical to production and leave epoch 0 unusable.
+SPAN_ATTRIBUTE_CATALOG_READ_MODE = "off"
+SPAN_ATTRIBUTE_CATALOG_EPOCH = 0
+SPAN_ATTRIBUTE_CATALOG_DATABASE = ""
+
 CH25_EVAL_LOGGER_TABLE = os.environ.get(
     "CH25_EVAL_LOGGER_TABLE", "tracer_eval_logger_v2"
 )

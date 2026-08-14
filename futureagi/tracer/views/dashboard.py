@@ -100,6 +100,9 @@ from tracer.services.clickhouse.read_budget import (
     is_clickhouse_query_error,
     is_read_budget_error,
 )
+from tracer.services.clickhouse.v2.attribute_catalog_shadow import (
+    run_catalog_value_shadow,
+)
 from tracer.services.clickhouse.v2.query_builders.dashboard import (
     DashboardQueryBuilderV2,
 )
@@ -118,6 +121,19 @@ from tracer.views.span_attributes import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def _run_catalog_value_shadow_fail_open(**kwargs) -> None:
+    """Keep the additive catalog observer outside the public API boundary."""
+
+    try:
+        run_catalog_value_shadow(**kwargs)
+    except Exception as exc:
+        logger.warning(
+            "span_attribute_catalog_shadow_boundary_error",
+            surface="dashboard_attribute_values",
+            error_type=type(exc).__name__,
+        )
 
 
 class DashboardExactReadError(RuntimeError):
@@ -4221,8 +4237,7 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 }
                                 for row in page_read.rows
                             ]
-                            return self._gm.success_response(
-                                {
+                            payload = {
                                     "values": values,
                                     **page_read.metadata.public_payload(),
                                     "has_more": has_more,
@@ -4234,7 +4249,21 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                         else {}
                                     ),
                                 }
+                            _run_catalog_value_shadow_fail_open(
+                                project_ids=project_ids,
+                                attribute_key=metric_name,
+                                authoritative_rows=page_read.rows,
+                                window_start=window_start,
+                                window_end=window_end,
+                                page_size=page_size,
+                                attribute_types=(
+                                    (attribute_type,) if attribute_type else None
+                                ),
+                                search=search,
+                                continuation=bool(cursor_token),
+                                request_deadline=filter_value_deadline,
                             )
+                            return self._gm.success_response(payload)
 
                         cursor_scope = cursor_scope_for_request(
                             request,
@@ -4469,8 +4498,7 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                     else None
                                 ),
                             )
-                        return self._gm.success_response(
-                            {
+                        payload = {
                                 "values": values,
                                 **page_read.metadata.public_payload(),
                                 "has_more": page_read.has_more,
@@ -4482,7 +4510,21 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                     else {}
                                 ),
                             }
+                        _run_catalog_value_shadow_fail_open(
+                            project_ids=project_ids,
+                            attribute_key=metric_name,
+                            authoritative_rows=page_read.rows,
+                            window_start=window_start,
+                            window_end=window_end,
+                            page_size=page_size,
+                            attribute_types=(
+                                (attribute_type,) if attribute_type else None
+                            ),
+                            search=search,
+                            continuation=bool(cursor_token),
+                            request_deadline=filter_value_deadline,
                         )
+                        return self._gm.success_response(payload)
 
                     selector = AttributeReadSelector(
                         typed_only=True,
@@ -4532,15 +4574,26 @@ class DashboardViewSet(BaseModelViewSetMixin, ModelViewSet):
                                 "Filter values are temporarily unavailable. Please retry.",
                                 code="service_unavailable",
                             )
-                    return self._gm.success_response(
-                        _legacy_filter_value_scope_metadata(
-                            {
-                                "values": values,
-                                **metadata,
-                            },
-                            project_scope,
-                        )
+                    payload = _legacy_filter_value_scope_metadata(
+                        {
+                            "values": values,
+                            **metadata,
+                        },
+                        project_scope,
                     )
+                    _run_catalog_value_shadow_fail_open(
+                        project_ids=project_ids,
+                        attribute_key=metric_name,
+                        authoritative_rows=read.rows,
+                        window_start=read.metadata.query_window_start,
+                        window_end=read.metadata.query_window_end,
+                        attribute_types=(
+                            (attribute_type,) if attribute_type else None
+                        ),
+                        search=search,
+                        request_deadline=filter_value_deadline,
+                    )
+                    return self._gm.success_response(payload)
                 except AttributeCursorStateError as exc:
                     if exc.code == "cursor_state_unavailable":
                         return self._gm.custom_error_response(

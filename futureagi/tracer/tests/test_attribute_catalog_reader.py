@@ -136,7 +136,13 @@ def _value_row(attribute_type, value, **overrides):
     return row
 
 
-def _reader(responder, *, project_ids=(PROJECT_A,), epoch=EPOCH):
+def _reader(
+    responder,
+    *,
+    project_ids=(PROJECT_A,),
+    epoch=EPOCH,
+    catalog_database=None,
+):
     executor = RecordingExecutor(responder)
     reader = AttributeCatalogReader(
         executor,
@@ -144,8 +150,67 @@ def _reader(responder, *, project_ids=(PROJECT_A,), epoch=EPOCH):
         catalog_epoch=epoch,
         window_start=WINDOW_START,
         window_end=WINDOW_END,
+        catalog_database=catalog_database,
     )
     return reader, executor
+
+
+def test_catalog_database_qualifies_only_closed_catalog_tables():
+    reader, executor = _reader(
+        _successful_responder(key_rows=[_key_row("alpha", "string")]),
+        catalog_database="th7247_catalog_dev_normal_0813b",
+    )
+
+    result = reader.read_key_candidates(page_size=2)
+
+    assert isinstance(result, CatalogKeyPage)
+    assert len(executor.calls) == 3
+    expected_tables = (
+        "span_attribute_catalog_activations",
+        "span_attribute_catalog_checkpoints",
+        "span_attribute_key_catalog",
+    )
+    for call, table in zip(executor.calls, expected_tables, strict=True):
+        assert f"FROM `th7247_catalog_dev_normal_0813b`.`{table}`" in call.sql
+        assert "FROM spans" not in call.sql
+
+
+@pytest.mark.parametrize(
+    ("sql_name", "table"),
+    (
+        ("_ACTIVATION_SQL", "span_attribute_catalog_activations"),
+        ("_CHECKPOINT_SQL", "span_attribute_catalog_checkpoints"),
+        ("_KEY_PAGE_SQL", "span_attribute_key_catalog"),
+        ("_VALUE_PAGE_SQL", "span_attribute_value_catalog"),
+    ),
+)
+def test_catalog_database_allowlist_covers_each_exact_catalog_table(sql_name, table):
+    sql = getattr(reader_module, sql_name)
+
+    qualified = reader_module._qualify_catalog_sql(sql, "isolated_catalog_dev")
+
+    assert qualified.count(f"FROM `isolated_catalog_dev`.`{table}`") == 1
+    assert reader_module._qualify_catalog_sql(sql, None) == sql
+
+
+def test_catalog_database_does_not_match_an_allowlisted_table_prefix():
+    with pytest.raises(ValueError, match="allowlisted table"):
+        reader_module._qualify_catalog_sql(
+            "SELECT * FROM span_attribute_key_catalog_backup",
+            "isolated_catalog_dev",
+        )
+
+
+@pytest.mark.parametrize(
+    "database",
+    ("default; DROP TABLE spans", "system", "information_schema", "has-dash", ""),
+)
+def test_catalog_database_rejects_unsafe_identifier(database):
+    with pytest.raises(ValueError, match="catalog_database"):
+        _reader(lambda _call: [], catalog_database=database)
+
+    with pytest.raises(ValueError, match="catalog_database"):
+        reader_module._qualify_catalog_sql(reader_module._KEY_PAGE_SQL, database)
 
 
 def _successful_responder(*, key_rows=(), value_rows=(), projects=(PROJECT_A,)):
