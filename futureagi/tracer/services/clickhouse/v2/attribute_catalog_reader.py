@@ -540,10 +540,10 @@ WITH source_values AS
     SELECT
         attribute_type,
         value_fingerprint,
-        value_json,
-        value_search_text,
-        first_seen,
-        last_seen
+        value_json AS raw_value_json,
+        value_search_text AS raw_value_search_text,
+        first_seen AS raw_first_seen,
+        last_seen AS raw_last_seen
     FROM span_attribute_value_catalog
     PREWHERE project_id IN %(catalog_project_ids)s
       AND catalog_epoch = %(catalog_epoch)s
@@ -555,12 +555,12 @@ WITH source_values AS
     SELECT
         attribute_type,
         value_fingerprint,
-        min(value_json) AS value_json,
-        min(value_search_text) AS value_search_text,
-        uniqExact(value_json) AS value_json_variants,
-        uniqExact(value_search_text) AS value_search_variants,
-        min(first_seen) AS first_seen,
-        max(last_seen) AS last_seen
+        min(raw_value_json) AS value_json,
+        min(raw_value_search_text) AS value_search_text,
+        uniqExact(raw_value_json) AS value_json_variants,
+        uniqExact(raw_value_search_text) AS value_search_variants,
+        min(raw_first_seen) AS first_seen,
+        max(raw_last_seen) AS last_seen
     FROM source_values
     GROUP BY attribute_type, value_fingerprint
 ), ordered_values AS

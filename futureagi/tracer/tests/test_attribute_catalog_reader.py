@@ -866,7 +866,7 @@ def test_frozen_value_epoch_returns_a_continuable_page_and_binds_filters():
     )
     assert value_call.params["catalog_page_limit"] == 4
     assert "voice.kind" not in value_call.sql
-    assert "uniqExact(value_json)" in value_call.sql
+    assert "uniqExact(raw_value_json)" in value_call.sql
 
 
 def test_value_checkpoint_binds_key_types_search_and_page_identity():
@@ -1174,9 +1174,12 @@ def test_catalog_value_search_filters_raw_rows_before_aggregate_aliases():
         "WHERE lower(value_search_text) LIKE %(catalog_value_search_pattern)s"
         in source_sql
     )
+    assert "value_search_text AS raw_value_search_text" in source_sql
+    assert "value_json AS raw_value_json" in source_sql
     assert "min(value_search_text) AS value_search_text" not in source_sql
     assert "FROM source_values" in grouped_sql
-    assert "min(value_search_text) AS value_search_text" in grouped_sql
+    assert "min(raw_value_search_text) AS value_search_text" in grouped_sql
+    assert "min(raw_value_json) AS value_json" in grouped_sql
     assert "WHERE lower(value_search_text)" not in grouped_sql
 
 
