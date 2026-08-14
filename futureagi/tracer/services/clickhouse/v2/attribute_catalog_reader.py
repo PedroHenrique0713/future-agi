@@ -535,7 +535,22 @@ LIMIT %(catalog_page_limit)s
 
 
 _VALUE_PAGE_SQL = """
-WITH grouped_values AS
+WITH source_values AS
+(
+    SELECT
+        attribute_type,
+        value_fingerprint,
+        value_json,
+        value_search_text,
+        first_seen,
+        last_seen
+    FROM span_attribute_value_catalog
+    PREWHERE project_id IN %(catalog_project_ids)s
+      AND catalog_epoch = %(catalog_epoch)s
+      AND attribute_key = %(catalog_attribute_key)s
+    WHERE lower(value_search_text) LIKE %(catalog_value_search_pattern)s
+       OR length(value_search_text) != lengthUTF8(value_search_text)
+), grouped_values AS
 (
     SELECT
         attribute_type,
@@ -546,12 +561,7 @@ WITH grouped_values AS
         uniqExact(value_search_text) AS value_search_variants,
         min(first_seen) AS first_seen,
         max(last_seen) AS last_seen
-    FROM span_attribute_value_catalog
-    PREWHERE project_id IN %(catalog_project_ids)s
-      AND catalog_epoch = %(catalog_epoch)s
-      AND attribute_key = %(catalog_attribute_key)s
-    WHERE lower(value_search_text) LIKE %(catalog_value_search_pattern)s
-       OR length(value_search_text) != lengthUTF8(value_search_text)
+    FROM source_values
     GROUP BY attribute_type, value_fingerprint
 ), ordered_values AS
 (

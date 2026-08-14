@@ -1157,6 +1157,29 @@ def test_catalog_search_uses_exact_ngram_index_expressions_and_bound_literals():
     )
 
 
+def test_catalog_value_search_filters_raw_rows_before_aggregate_aliases():
+    reader, executor = _reader(
+        _successful_responder(value_rows=(_value_row("string", "value"),))
+    )
+
+    assert isinstance(
+        reader.read_value_candidates("key", page_size=1, search="value"),
+        CatalogValuePage,
+    )
+    value_sql = executor.calls[-1].sql
+    source_sql, grouped_sql = value_sql.split("), grouped_values AS", maxsplit=1)
+
+    assert "FROM span_attribute_value_catalog" in source_sql
+    assert (
+        "WHERE lower(value_search_text) LIKE %(catalog_value_search_pattern)s"
+        in source_sql
+    )
+    assert "min(value_search_text) AS value_search_text" not in source_sql
+    assert "FROM source_values" in grouped_sql
+    assert "min(value_search_text) AS value_search_text" in grouped_sql
+    assert "WHERE lower(value_search_text)" not in grouped_sql
+
+
 @pytest.mark.parametrize("search", ["ss", "Straße"])
 def test_unicode_casefold_search_matches_strasse_and_rechecks_false_positives(search):
     key_rows = sorted(
