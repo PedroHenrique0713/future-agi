@@ -152,9 +152,10 @@ class TestMCPToolGroupsView:
         assert response.status_code == 200
         result = response.data["result"]
         assert "context" in result["enabled_groups"]
-        assert "users" in result["enabled_groups"]
+        assert "users" not in result["enabled_groups"]
         slugs = {group["slug"] for group in result["available_groups"]}
-        assert "users" in slugs
+        assert "gateway" in slugs
+        assert "users" not in slugs
         assert "docs" not in slugs
 
     def test_update_groups(self, auth_client, user, workspace):

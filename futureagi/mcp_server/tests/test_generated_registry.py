@@ -11,10 +11,10 @@ from mcp_server.generated_registry import (
 def test_committed_generated_registry_loads_all_tools():
     registry = GeneratedToolRegistry.from_manifest()
 
-    assert registry.count() == 100
+    assert registry.count() == 92
     assert registry.get("list_datasets").group == "datasets"
     assert registry.get("get_dashboard").group == "dashboards"
-    assert registry.get("list_org_members").group == "users"
+    assert registry.get("get_gateway_config").group == "gateway"
     assert registry.get("missing") is None
 
 
@@ -83,10 +83,19 @@ def test_agents_group_matches_legacy_agents_category():
     }
 
 
-def test_users_group_covers_members_keys_and_workspaces():
+def test_account_administration_is_not_exposed():
+    """Org and credential administration stays out of the MCP surface.
+
+    Minting an API key or inviting a member over MCP would let a tool call widen
+    the caller's own access beyond the credential it authenticated with, so the
+    catalog exposes no `users` group at all. `context` keeps the read-only
+    workspace discovery an agent needs to address the right tenant.
+    """
     registry = GeneratedToolRegistry.from_manifest()
 
-    assert {tool.name for tool in registry.list_by_groups(["users"])} == {
+    assert registry.list_by_groups(["users"]) == []
+    assert registry.list_by_groups(["docs"]) == []
+    for name in (
         "list_org_members",
         "invite_org_member",
         "list_api_keys",
@@ -94,8 +103,8 @@ def test_users_group_covers_members_keys_and_workspaces():
         "create_workspace",
         "list_workspace_members",
         "update_workspace",
-    }
-    assert registry.list_by_groups(["docs"]) == []
+    ):
+        assert registry.get(name) is None
 
 
 def test_registry_rejects_incorrect_manifest_count(tmp_path):

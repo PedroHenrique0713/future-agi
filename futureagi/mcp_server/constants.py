@@ -49,10 +49,6 @@ TOOL_GROUPS = {
         "name": "Prompt Workbench",
         "description": "Manage prompt templates, versions, labels, folders, simulations, and evaluations",
     },
-    "users": {
-        "name": "Users & Workspaces",
-        "description": "User management, workspace operations, organization settings, and API key management",
-    },
     "usage": {
         "name": "Usage & Costs",
         "description": "Cost analytics and billing information",
@@ -79,7 +75,6 @@ DEFAULT_TOOL_GROUPS = [
     "agents",
     "simulation",
     "prompts",
-    "users",
     "usage",
     "gateway",
     "dashboards",

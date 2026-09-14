@@ -1,5 +1,5 @@
 version: 1
-expected_tool_count: 100
+expected_tool_count: 92
 
 tools:
   # context
@@ -18,42 +18,7 @@ tools:
     description: Return a workspace by its identifier.
     operation: {method: GET, path: "/accounts/workspaces/{workspace_id}/"}
     access: read
-  # users
-  - name: list_org_members
-    group: users
-    description: List members of the current organization.
-    operation: {method: GET, path: "/accounts/organization/members/"}
-    access: read
-  - name: invite_org_member
-    group: users
-    description: Invite a user to the current organization by email and role.
-    operation: {method: POST, path: "/accounts/organization/invite/"}
-    access: write
-  - name: list_api_keys
-    group: users
-    description: List API keys for the current organization.
-    operation: {method: GET, path: "/accounts/key/get_secret_keys/"}
-    access: read
-  - name: create_api_key
-    group: users
-    description: Create a named API key for the current organization.
-    operation: {method: POST, path: "/accounts/key/generate_secret_key/"}
-    access: write
-  - name: create_workspace
-    group: users
-    description: Create a workspace in the current organization.
-    operation: {method: POST, path: "/accounts/workspaces/"}
-    access: write
-  - name: list_workspace_members
-    group: users
-    description: List members of a workspace.
-    operation: {method: GET, path: "/accounts/workspaces/{workspace_id}/members/"}
-    access: read
-  - name: update_workspace
-    group: users
-    description: Update a workspace name or settings.
-    operation: {method: PUT, path: "/accounts/workspaces/{workspace_id}/"}
-    access: write
+
   # datasets
   - name: list_datasets
     group: datasets
@@ -64,11 +29,6 @@ tools:
     group: datasets
     description: Return the rows, columns, and metadata for a dataset.
     operation: {method: GET, path: "/model-hub/develops/{dataset_id}/get-dataset-table/"}
-    access: read
-  - name: get_dataset_eval_stats
-    group: datasets
-    description: Return evaluation statistics for a dataset.
-    operation: {method: GET, path: "/model-hub/dataset/{dataset_id}/eval-stats/"}
     access: read
   - name: create_dataset
     group: datasets
