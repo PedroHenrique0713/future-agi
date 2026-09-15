@@ -114891,7 +114891,7 @@
                 "livekit_max_concurrency": {
                     "title": "Livekit max concurrency",
                     "type": "integer",
-                    "maximum": 25,
+                    "maximum": 5,
                     "minimum": 1,
                     "x-nullable": true
                 }
@@ -115310,7 +115310,7 @@
                 "livekit_max_concurrency": {
                     "title": "Livekit max concurrency",
                     "type": "integer",
-                    "maximum": 25,
+                    "maximum": 5,
                     "minimum": 1,
                     "x-nullable": true
                 }
@@ -115547,7 +115547,7 @@
                 "livekit_max_concurrency": {
                     "title": "Livekit max concurrency",
                     "type": "integer",
-                    "maximum": 25,
+                    "maximum": 5,
                     "minimum": 1
                 },
                 "commit_message": {
@@ -120024,7 +120024,6 @@
                     "title": "Action",
                     "type": "string",
                     "enum": [
-                        "scenario_generation",
                         "text_call",
                         "voice_call",
                         "managed_evaluation"
@@ -120104,7 +120103,6 @@
                     "title": "Action",
                     "type": "string",
                     "enum": [
-                        "scenario_generation",
                         "text_call",
                         "voice_call",
                         "managed_evaluation"
