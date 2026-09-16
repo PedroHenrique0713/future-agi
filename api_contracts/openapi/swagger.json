@@ -118593,8 +118593,7 @@
             "required": [
                 "text_sim_tokens",
                 "voice_sim_minutes",
-                "ai_credits",
-                "sandbox_seconds"
+                "ai_credits"
             ],
             "type": "object",
             "properties": {
@@ -118610,11 +118609,6 @@
                 },
                 "ai_credits": {
                     "title": "Ai credits",
-                    "type": "number",
-                    "minimum": 0
-                },
-                "sandbox_seconds": {
-                    "title": "Sandbox seconds",
                     "type": "number",
                     "minimum": 0
                 }
@@ -120010,8 +120004,7 @@
                 "scenario_key",
                 "amount",
                 "occurred_at",
-                "funding",
-                "infra_failed"
+                "funding"
             ],
             "type": "object",
             "properties": {
@@ -120025,8 +120018,7 @@
                     "type": "string",
                     "enum": [
                         "text_call",
-                        "voice_call",
-                        "managed_evaluation"
+                        "voice_call"
                     ]
                 },
                 "scenario_key": {
@@ -120052,36 +120044,6 @@
                         "platform",
                         "customer"
                     ]
-                },
-                "infra_failed": {
-                    "title": "Infra failed",
-                    "type": "boolean"
-                },
-                "model": {
-                    "title": "Model",
-                    "type": "string",
-                    "maxLength": 255,
-                    "minLength": 1,
-                    "x-nullable": true
-                }
-            }
-        },
-        "HarnessUsageTotals": {
-            "required": [
-                "text_sim_tokens",
-                "voice_sim_minutes"
-            ],
-            "type": "object",
-            "properties": {
-                "text_sim_tokens": {
-                    "title": "Text sim tokens",
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "voice_sim_minutes": {
-                    "title": "Voice sim minutes",
-                    "type": "number",
-                    "minimum": 0
                 }
             }
         },
@@ -120104,20 +120066,8 @@
                     "type": "string",
                     "enum": [
                         "text_call",
-                        "voice_call",
-                        "managed_evaluation"
+                        "voice_call"
                     ]
-                },
-                "amount": {
-                    "title": "Amount",
-                    "type": "number",
-                    "minimum": 0
-                },
-                "model": {
-                    "title": "Model",
-                    "type": "string",
-                    "maxLength": 255,
-                    "minLength": 1
                 },
                 "schema_version": {
                     "title": "Schema version",
@@ -120131,14 +120081,6 @@
                     "items": {
                         "$ref": "#/definitions/HarnessUsageRecord"
                     }
-                },
-                "totals": {
-                    "$ref": "#/definitions/HarnessUsageTotals"
-                },
-                "sandbox_seconds": {
-                    "title": "Sandbox seconds",
-                    "type": "number",
-                    "minimum": 0
                 }
             }
         },

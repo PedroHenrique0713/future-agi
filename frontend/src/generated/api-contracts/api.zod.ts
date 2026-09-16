@@ -34909,8 +34909,6 @@ export const simulateApiHarnessJobsListResponseConsumptionVoiceSimMinutesMin = 0
 
 export const simulateApiHarnessJobsListResponseConsumptionAiCreditsMin = 0;
 
-export const simulateApiHarnessJobsListResponseConsumptionSandboxSecondsMin = 0;
-
 export const SimulateApiHarnessJobsListResponseItem = zod.object({
   job: zod.object({
     job_id: zod.string().uuid(),
@@ -34993,9 +34991,6 @@ export const SimulateApiHarnessJobsListResponseItem = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsListResponseConsumptionAiCreditsMin),
-      sandbox_seconds: zod
-        .number()
-        .min(simulateApiHarnessJobsListResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
@@ -35701,8 +35696,6 @@ export const simulateApiHarnessJobsReadResponseConsumptionVoiceSimMinutesMin = 0
 
 export const simulateApiHarnessJobsReadResponseConsumptionAiCreditsMin = 0;
 
-export const simulateApiHarnessJobsReadResponseConsumptionSandboxSecondsMin = 0;
-
 export const SimulateApiHarnessJobsReadResponse = zod.object({
   job: zod.object({
     job_id: zod.string().uuid(),
@@ -35785,9 +35778,6 @@ export const SimulateApiHarnessJobsReadResponse = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsReadResponseConsumptionAiCreditsMin),
-      sandbox_seconds: zod
-        .number()
-        .min(simulateApiHarnessJobsReadResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
@@ -35845,8 +35835,6 @@ export const simulateApiHarnessJobsCancelResponseConsumptionTextSimTokensMin = 0
 export const simulateApiHarnessJobsCancelResponseConsumptionVoiceSimMinutesMin = 0;
 
 export const simulateApiHarnessJobsCancelResponseConsumptionAiCreditsMin = 0;
-
-export const simulateApiHarnessJobsCancelResponseConsumptionSandboxSecondsMin = 0;
 
 export const SimulateApiHarnessJobsCancelResponse = zod.object({
   job: zod.object({
@@ -35930,9 +35918,6 @@ export const SimulateApiHarnessJobsCancelResponse = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsCancelResponseConsumptionAiCreditsMin),
-      sandbox_seconds: zod
-        .number()
-        .min(simulateApiHarnessJobsCancelResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
@@ -36368,42 +36353,19 @@ export const SimulateApiHarnessAttemptsUsageParams = zod.object({
   id: zod.string(),
 });
 
-export const simulateApiHarnessAttemptsUsageBodyAmountMin = 0;
-
-export const simulateApiHarnessAttemptsUsageBodyModelMax = 255;
-
 export const simulateApiHarnessAttemptsUsageBodyRecordsItemScenarioKeyMax = 255;
 
 export const simulateApiHarnessAttemptsUsageBodyRecordsItemAmountMin = 0;
 
-export const simulateApiHarnessAttemptsUsageBodyRecordsItemModelMax = 255;
-
-export const simulateApiHarnessAttemptsUsageBodyTotalsTextSimTokensMin = 0;
-
-export const simulateApiHarnessAttemptsUsageBodyTotalsVoiceSimMinutesMin = 0;
-
-export const simulateApiHarnessAttemptsUsageBodySandboxSecondsMin = 0;
-
 export const SimulateApiHarnessAttemptsUsageBody = zod.object({
   operation: zod.enum(["check", "report"]),
-  action: zod
-    .enum(["text_call", "voice_call", "managed_evaluation"])
-    .optional(),
-  amount: zod
-    .number()
-    .min(simulateApiHarnessAttemptsUsageBodyAmountMin)
-    .optional(),
-  model: zod
-    .string()
-    .min(1)
-    .max(simulateApiHarnessAttemptsUsageBodyModelMax)
-    .optional(),
+  action: zod.enum(["text_call", "voice_call"]).optional(),
   schema_version: zod.enum(["futureagi.harness-usage.v1"]).optional(),
   records: zod
     .array(
       zod.object({
         id: zod.string().uuid(),
-        action: zod.enum(["text_call", "voice_call", "managed_evaluation"]),
+        action: zod.enum(["text_call", "voice_call"]),
         scenario_key: zod
           .string()
           .min(1)
@@ -36413,28 +36375,8 @@ export const SimulateApiHarnessAttemptsUsageBody = zod.object({
           .min(simulateApiHarnessAttemptsUsageBodyRecordsItemAmountMin),
         occurred_at: zod.string().datetime({ offset: true }),
         funding: zod.enum(["platform", "customer"]),
-        infra_failed: zod.boolean(),
-        model: zod
-          .string()
-          .min(1)
-          .max(simulateApiHarnessAttemptsUsageBodyRecordsItemModelMax)
-          .optional(),
       }),
     )
-    .optional(),
-  totals: zod
-    .object({
-      text_sim_tokens: zod
-        .number()
-        .min(simulateApiHarnessAttemptsUsageBodyTotalsTextSimTokensMin),
-      voice_sim_minutes: zod
-        .number()
-        .min(simulateApiHarnessAttemptsUsageBodyTotalsVoiceSimMinutesMin),
-    })
-    .optional(),
-  sandbox_seconds: zod
-    .number()
-    .min(simulateApiHarnessAttemptsUsageBodySandboxSecondsMin)
     .optional(),
 });
 

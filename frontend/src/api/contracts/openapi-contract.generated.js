@@ -59676,18 +59676,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         action: {
           title: "Action",
           type: "string",
-          enum: ["text_call", "voice_call", "managed_evaluation"],
-        },
-        amount: {
-          title: "Amount",
-          type: "number",
-          minimum: 0,
-        },
-        model: {
-          title: "Model",
-          type: "string",
-          maxLength: 255,
-          minLength: 1,
+          enum: ["text_call", "voice_call"],
         },
         schema_version: {
           title: "Schema version",
@@ -59699,14 +59688,6 @@ export const OPENAPI_CONTRACT = Object.freeze({
           items: {
             $ref: "#/definitions/HarnessUsageRecord",
           },
-        },
-        totals: {
-          $ref: "#/definitions/HarnessUsageTotals",
-        },
-        sandbox_seconds: {
-          title: "Sandbox seconds",
-          type: "number",
-          minimum: 0,
         },
       },
     },
@@ -86231,12 +86212,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
     },
     HarnessConsumption: {
-      required: [
-        "text_sim_tokens",
-        "voice_sim_minutes",
-        "ai_credits",
-        "sandbox_seconds",
-      ],
+      required: ["text_sim_tokens", "voice_sim_minutes", "ai_credits"],
       type: "object",
       properties: {
         text_sim_tokens: {
@@ -86251,11 +86227,6 @@ export const OPENAPI_CONTRACT = Object.freeze({
         },
         ai_credits: {
           title: "Ai credits",
-          type: "number",
-          minimum: 0,
-        },
-        sandbox_seconds: {
-          title: "Sandbox seconds",
           type: "number",
           minimum: 0,
         },
@@ -86757,7 +86728,6 @@ export const OPENAPI_CONTRACT = Object.freeze({
         "amount",
         "occurred_at",
         "funding",
-        "infra_failed",
       ],
       type: "object",
       properties: {
@@ -86769,7 +86739,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         action: {
           title: "Action",
           type: "string",
-          enum: ["text_call", "voice_call", "managed_evaluation"],
+          enum: ["text_call", "voice_call"],
         },
         scenario_key: {
           title: "Scenario key",
@@ -86791,33 +86761,6 @@ export const OPENAPI_CONTRACT = Object.freeze({
           title: "Funding",
           type: "string",
           enum: ["platform", "customer"],
-        },
-        infra_failed: {
-          title: "Infra failed",
-          type: "boolean",
-        },
-        model: {
-          title: "Model",
-          type: "string",
-          maxLength: 255,
-          minLength: 1,
-          "x-nullable": true,
-        },
-      },
-    },
-    HarnessUsageTotals: {
-      required: ["text_sim_tokens", "voice_sim_minutes"],
-      type: "object",
-      properties: {
-        text_sim_tokens: {
-          title: "Text sim tokens",
-          type: "integer",
-          minimum: 0,
-        },
-        voice_sim_minutes: {
-          title: "Voice sim minutes",
-          type: "number",
-          minimum: 0,
         },
       },
     },
