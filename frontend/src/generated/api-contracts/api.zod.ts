@@ -34909,6 +34909,8 @@ export const simulateApiHarnessJobsListResponseConsumptionVoiceSimMinutesMin = 0
 
 export const simulateApiHarnessJobsListResponseConsumptionAiCreditsMin = 0;
 
+export const simulateApiHarnessJobsListResponseConsumptionSandboxSecondsMin = 0;
+
 export const SimulateApiHarnessJobsListResponseItem = zod.object({
   job: zod.object({
     job_id: zod.string().uuid(),
@@ -34991,6 +34993,9 @@ export const SimulateApiHarnessJobsListResponseItem = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsListResponseConsumptionAiCreditsMin),
+      sandbox_seconds: zod
+        .number()
+        .min(simulateApiHarnessJobsListResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
@@ -35696,6 +35701,8 @@ export const simulateApiHarnessJobsReadResponseConsumptionVoiceSimMinutesMin = 0
 
 export const simulateApiHarnessJobsReadResponseConsumptionAiCreditsMin = 0;
 
+export const simulateApiHarnessJobsReadResponseConsumptionSandboxSecondsMin = 0;
+
 export const SimulateApiHarnessJobsReadResponse = zod.object({
   job: zod.object({
     job_id: zod.string().uuid(),
@@ -35778,6 +35785,9 @@ export const SimulateApiHarnessJobsReadResponse = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsReadResponseConsumptionAiCreditsMin),
+      sandbox_seconds: zod
+        .number()
+        .min(simulateApiHarnessJobsReadResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
@@ -35835,6 +35845,8 @@ export const simulateApiHarnessJobsCancelResponseConsumptionTextSimTokensMin = 0
 export const simulateApiHarnessJobsCancelResponseConsumptionVoiceSimMinutesMin = 0;
 
 export const simulateApiHarnessJobsCancelResponseConsumptionAiCreditsMin = 0;
+
+export const simulateApiHarnessJobsCancelResponseConsumptionSandboxSecondsMin = 0;
 
 export const SimulateApiHarnessJobsCancelResponse = zod.object({
   job: zod.object({
@@ -35918,6 +35930,9 @@ export const SimulateApiHarnessJobsCancelResponse = zod.object({
       ai_credits: zod
         .number()
         .min(simulateApiHarnessJobsCancelResponseConsumptionAiCreditsMin),
+      sandbox_seconds: zod
+        .number()
+        .min(simulateApiHarnessJobsCancelResponseConsumptionSandboxSecondsMin),
     })
     .optional(),
   usage_limit: zod.object({}).passthrough().optional(),
