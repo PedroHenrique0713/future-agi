@@ -335,9 +335,20 @@ if ($NoUp) {
 }
 
 # ---- collect first-user creds (up-front so the rest runs unattended) ----
+# Terminal input carries raw bytes, so a stray escape sequence (Shift+Tab emits
+# ESC [ Z) travels into create_user and the sign-in banner.
+$EmailPattern = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+
+function Remove-ControlChars {
+  param([string]$Value)
+  if (-not $Value) { return $Value }
+  return ($Value -replace '[\p{C}]', '')
+}
+
 $UserEmail = $null
 $UserName  = $null
 $UserPass  = $null
+$AccountState = 'skipped'
 
 function Read-Plain {
   param([string]$Prompt, [switch]$Secret)
@@ -356,15 +367,15 @@ if (-not $SkipUserCreation -and -not $NonInteractive) {
   Say ""
 
   while ($true) {
-    $UserEmail = Read-Plain "  Email"
+    $UserEmail = Remove-ControlChars (Read-Plain "  Email")
     if (-not $UserEmail) { Say "  skipped -- no user will be created"; break }
-    if ($UserEmail -match '^[^@\s]+@[^@\s]+\.[^@\s]+$') { break }
+    if ($UserEmail -match $EmailPattern) { break }
     Warn "  '$UserEmail' doesn't look like an email -- try again"
   }
 
   if ($UserEmail) {
     while (-not $UserName) {
-      $UserName = Read-Plain "  Name"
+      $UserName = Remove-ControlChars (Read-Plain "  Name")
       if (-not $UserName) { Warn "  name can't be empty" }
     }
     while ($true) {
@@ -503,8 +514,12 @@ $BackendPort = Get-EnvValue 'BACKEND_PORT'
 if (-not $BackendPort) { $BackendPort = 8000 }
 $readyTimeout = Get-BoundedEnvInt 'INSTALL_READY_TIMEOUT_SECONDS' 600 60 1800
 $stabilitySeconds = Get-BoundedEnvInt 'INSTALL_STABILITY_SECONDS' 15 5 120
+$readyMax = Get-BoundedEnvInt 'INSTALL_READY_MAX_SECONDS' 2400 300 7200
 $deadline = (Get-Date).AddSeconds($readyTimeout)
+$hardDeadline = (Get-Date).AddSeconds($readyMax)
 $readySince = $null
+$lastMigrationsApplied = 0
+$pendingGate = 'containers to start'
 $lastReadySignature = ''
 $catalogJobs = @(
   'property-catalog-kafka-volume-init',
@@ -556,11 +571,28 @@ while ($true) {
     }
   }
 
+  $backendHealthy = $true
   try {
     $null = Invoke-WebRequest -Uri "http://localhost:$BackendPort/health/" `
       -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
   } catch {
+    $backendHealthy = $false
     $allReady = $false
+    $pendingGate = "backend /health/ on port $BackendPort"
+  }
+
+  # A first install spends most of its readiness budget applying migrations.
+  # Extend only while the backend is itself the unmet gate and its migration
+  # count is still climbing, so a stuck peer service can never hide behind it.
+  if (-not $backendHealthy) {
+    $backendLog = (Invoke-Compose logs --tail 2000 backend 2>&1 | Out-String)
+    $migrationsApplied = ([regex]::Matches($backendLog, 'Applying ')).Count
+    if ($migrationsApplied -gt $lastMigrationsApplied) {
+      $lastMigrationsApplied = $migrationsApplied
+      Say "  migrations in progress ($migrationsApplied applied) -- extending the readiness window"
+      $deadline = $now.AddSeconds($readyTimeout)
+      if ($deadline -gt $hardDeadline) { $deadline = $hardDeadline }
+    }
   }
 
   if ($fatalReason) {
@@ -586,7 +618,7 @@ while ($true) {
 
   if ($now -ge $deadline) {
     Save-ReadinessDiagnostics
-    Die "Stack did not become fully ready within ${readyTimeout}s. Relevant service logs were appended to $LogFile"
+    Die "Stack did not become fully ready -- still waiting on $pendingGate. Relevant service logs were appended to $LogFile"
   }
   Start-Sleep -Seconds 5
 }
@@ -598,14 +630,15 @@ if ($UserEmail) {
     --email $UserEmail --name $UserName --password $UserPass 2>&1
   $cuRc = $LASTEXITCODE
   if ($cuRc -eq 0) {
+    $AccountState = 'created'
     Ok "Account created for $UserEmail"
   } elseif ($cuOut -match '(?i)already exists|UNIQUE constraint') {
+    $AccountState = 'exists'
     Ok "Account already exists for $UserEmail -- sign in normally"
   } else {
+    $AccountState = 'failed'
     Warn "create_user failed (exit $cuRc). Last 6 lines:"
     ($cuOut | Out-String).Split([char]10) | Select-Object -Last 6 | ForEach-Object { Say "      $_" }
-    Warn "Run it manually after the stack settles:"
-    Warn "  docker exec -it futureagi-backend-1 python manage.py create_user"
   }
 }
 
@@ -630,10 +663,15 @@ Say ""
 Say "  Existing-data catalog backfill"
 Say "    Restarts do not scan historical data automatically. After an upgrade:"
 Say "    .\bin\property-catalog-backfill.ps1 -Execute"
-if ($UserEmail) {
+if ($AccountState -eq 'created' -or $AccountState -eq 'exists') {
   Say ""
   Say "  Sign in as $UserEmail"
   Say "    ->  http://localhost:$FrontendPort/auth/jwt/login"
+} elseif ($AccountState -eq 'failed') {
+  Say ""
+  Say "  ACTION REQUIRED -- no account was created"
+  Say "    The stack is running, but you cannot sign in until you create one:"
+  Say "    docker exec -it futureagi-backend-1 python manage.py create_user"
 }
 Say ""
 Say "  Stop:        $DcCmd $($DcArgs -join ' ') down"
@@ -641,3 +679,6 @@ Say "  Wipe data:   $DcCmd $($DcArgs -join ' ') down -v"
 Say "  Tail logs:   $DcCmd $($DcArgs -join ' ') logs -f"
 Say "  Install log: $LogFile"
 Say ""
+
+if ($AccountState -eq 'failed') { exit 1 }
+exit 0
