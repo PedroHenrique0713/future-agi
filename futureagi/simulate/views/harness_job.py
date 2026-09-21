@@ -13,7 +13,6 @@ from rest_framework.response import Response
 
 from simulate.serializers.harness_job import (
     HarnessJobActionSerializer,
-    HarnessJobAdjustmentSerializer,
     HarnessJobCreateSerializer,
     HarnessJobExtendSerializer,
     HarnessJobReadSerializer,
@@ -22,6 +21,10 @@ from simulate.serializers.harness_job import (
     HarnessSecretValuesResponseSerializer,
     HarnessSecretValuesSerializer,
     HarnessSourceUploadResponseSerializer,
+)
+from simulate.serializers.hosted_harness_conversation import (
+    HarnessConversationMessageCreateSerializer,
+    HarnessConversationReadSerializer,
 )
 from simulate.services.harness_credentials import (
     credential_file_ref,
@@ -267,20 +270,21 @@ class HarnessJobViewSet(viewsets.ViewSet):
         return get_harness_provider().cancel(request, pk)
 
     @validated_request(
-        request_serializer=HarnessJobAdjustmentSerializer,
-        reject_unknown_fields=True,
-    )
-    @action(detail=True, methods=["post"])
-    def adjust(self, request, pk=None):
-        return get_harness_provider().adjust(request, pk)
-
-    @validated_request(
         request_serializer=HarnessJobExtendSerializer,
         reject_unknown_fields=True,
     )
     @action(detail=True, methods=["post"])
     def extend(self, request, pk=None):
         return get_harness_provider().extend(request, pk)
+
+    @validated_request(
+        request_serializer=HarnessConversationMessageCreateSerializer,
+        responses={202: HarnessConversationReadSerializer},
+        reject_unknown_fields=True,
+    )
+    @action(detail=True, methods=["post"], url_path=r"conversation/messages")
+    def conversation_message(self, request, pk=None):
+        return get_harness_provider().send_message(request, pk)
 
     @action(detail=False, methods=["get"])
     def health(self, request):

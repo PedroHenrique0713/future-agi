@@ -84,6 +84,8 @@ def test_platform_simulator_material_uses_deployment_credentials_only(
     monkeypatch.setenv("SIMULATOR_LLM_MODEL", "gemini-3.7-flash")
     monkeypatch.delenv("ALK_HARNESS", raising=False)
     monkeypatch.delenv("ALK_HARNESS_MODEL", raising=False)
+    monkeypatch.setenv("ALK_HOSTED_AGENTCC_BASE_URL", "https://gateway.futureagi.test")
+    monkeypatch.setenv("AGENTCC_INTERNAL_API_KEY", "internal-key")
     monkeypatch.setenv("DEEPGRAM_API_KEY", "platform-deepgram-secret")
     monkeypatch.setenv("LIVEKIT_URL", "wss://platform-livekit.example")
     monkeypatch.setenv("LIVEKIT_API_KEY", "platform-livekit-key")
@@ -99,13 +101,21 @@ def test_platform_simulator_material_uses_deployment_credentials_only(
     assert values["LIVEKIT_URL"] == "wss://platform-livekit.example"
     assert values["LIVEKIT_API_KEY"] == "platform-livekit-key"
     assert values["LIVEKIT_API_SECRET"] == "platform-livekit-secret"
-    assert values["ALK_HARNESS"] == "vertex-gemini"
+    assert values["ALK_HARNESS"] == "claude"
+    assert values["ALK_HARNESS_MODEL"] == "vertex_ai/gemini-3.7-flash"
+    assert values["ALK_CLAUDE_GATEWAY_URL"] == "https://gateway.futureagi.test"
+    assert values["ALK_CLAUDE_GATEWAY_API_KEY"] == "internal-key"
+    assert values["ANTHROPIC_VERTEX_PROJECT_ID"] == "platform-simulator-project"
     assert credential_bytes == credentials.read_bytes()
 
 
-def test_platform_simulator_defaults_to_approved_vertex_model(monkeypatch):
+def test_platform_simulator_defaults_to_claude_authoring_and_gemini_caller(
+    monkeypatch,
+):
     monkeypatch.delenv("SIMULATOR_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("SIMULATOR_LLM_MODEL", raising=False)
+    monkeypatch.delenv("ALK_HOSTED_AGENTCC_BASE_URL", raising=False)
+    monkeypatch.delenv("AGENTCC_INTERNAL_API_KEY", raising=False)
     monkeypatch.delenv("ALK_HARNESS", raising=False)
     monkeypatch.delenv("ALK_HARNESS_MODEL", raising=False)
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
@@ -114,8 +124,8 @@ def test_platform_simulator_defaults_to_approved_vertex_model(monkeypatch):
 
     assert values["SIMULATOR_LLM_PROVIDER"] == "vertex"
     assert values["SIMULATOR_LLM_MODEL"] == "gemini-3.7-flash"
-    assert values["ALK_HARNESS"] == "vertex-gemini"
-    assert values["ALK_HARNESS_MODEL"] == "gemini-3.7-flash"
+    assert values["ALK_HARNESS"] == "claude"
+    assert values["ALK_HARNESS_MODEL"] == "claude-sonnet-4-6"
     assert credential_bytes is None
 
 
@@ -152,6 +162,15 @@ def test_provider_egress_includes_vertex_auth_and_both_model_regions():
         "us-central1-aiplatform.googleapis.com",
         "us-east5-aiplatform.googleapis.com",
     }
+
+
+def test_provider_egress_includes_scoped_claude_gateway():
+    assert _provider_egress_domains(
+        {
+            "ALK_CLAUDE_GATEWAY_URL": "https://gateway.futureagi.com",
+            "ALK_CLAUDE_GATEWAY_API_KEY": "opaque",
+        }
+    ) == {"gateway.futureagi.com"}
 
 
 def test_provider_egress_includes_vapi_and_retell_call_hosts():
@@ -1060,6 +1079,7 @@ def test_daytona_launch_uploads_contract_files_and_starts_one_session(
     assert "--adjustments /run/futureagi/adjustments.jsonl" in (
         client.sandbox.process.session_request.command
     )
+    assert "; fi &&" in client.sandbox.process.session_request.command
     # Authoring and call execution are distinct bounded phases. The sandbox must survive the
     # former rather than using only the 10-minute call-runtime budget plus two minutes.
     assert client.params.ttl_seconds == 7200
@@ -1445,6 +1465,39 @@ def test_cancel_signals_guest_before_provider_delete(organization, monkeypatch):
     assert attempt.terminal_stage == "canceled"
     assert attempt.terminal_reason == "user_canceled"
     assert attempt.terminal_failure is None
+
+
+@pytest.mark.django_db
+def test_cancel_deletes_when_guest_signal_fails(organization, monkeypatch):
+    payload = _payload()
+    payload["source"] = {
+        "kind": "remote",
+        "endpoint": "https://agent.example.com",
+        "visibility": "public",
+    }
+    job, _ = create_hosted_job(
+        organization, payload, idempotency_key="cancel-signal-failure"
+    )
+    client = _Daytona()
+    gateway = object.__new__(HostedHarnessGateway)
+    gateway.client = client
+    gateway.snapshot = "alk-hosted-v1"
+    gateway.snapshot_digest = ""
+    with patch(
+        "simulate.services.hosted_harness_gateway.HostedSourceAcquirer.acquire",
+        return_value=(b"archive", ""),
+    ):
+        gateway.launch(job, endpoint_base_url="https://platform.example.com")
+
+    def fail_upload(_content, _path):
+        raise RuntimeError("guest control channel unavailable")
+
+    monkeypatch.setattr(client.sandbox.fs, "upload_file", fail_upload)
+
+    canceled = gateway.cancel(job, reason="user_canceled")
+
+    assert client.deleted is True
+    assert canceled.state == HostedHarnessJob.State.CANCELED
 
 
 @pytest.mark.django_db

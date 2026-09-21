@@ -5,7 +5,7 @@
 export const API_SURFACE_CONTRACT = Object.freeze({
   generatedFrom: "api_contracts/openapi/swagger.json",
   swaggerVersion: "2.0",
-  endpointCount: 1005,
+  endpointCount: 1010,
   groups: {
     accounts: {
       "/accounts/2fa/recovery-codes/": ["get"],
@@ -852,6 +852,7 @@ export const API_SURFACE_CONTRACT = Object.freeze({
       "/simulate/api/harness-jobs/{id}/": ["get"],
       "/simulate/api/harness-jobs/{id}/adjust/": ["post"],
       "/simulate/api/harness-jobs/{id}/cancel/": ["post"],
+      "/simulate/api/harness-jobs/{id}/conversation/messages/": ["post"],
       "/simulate/api/harness-jobs/{id}/extend/": ["post"],
       "/simulate/api/harness/attempts/{id}/artifacts/manifest/": ["post"],
       "/simulate/api/harness/attempts/{id}/artifacts/{artifact_digest}/": [
@@ -861,6 +862,11 @@ export const API_SURFACE_CONTRACT = Object.freeze({
       "/simulate/api/harness/attempts/{id}/ingress/": ["post"],
       "/simulate/api/harness/attempts/{id}/results/": ["post"],
       "/simulate/api/harness/attempts/{id}/scenarios/": ["post"],
+      "/simulate/api/harness/conversations/{id}/commands/": ["get"],
+      "/simulate/api/harness/conversations/{id}/events/": ["post"],
+      "/simulate/api/harness/conversations/{id}/rerun/": ["post"],
+      "/simulate/api/harness/conversations/{id}/run-status/": ["get"],
+      "/simulate/api/harness/conversations/{id}/workspace/": ["put"],
       "/simulate/api/livekit/call-config/{call_id}/": ["get"],
       "/simulate/api/livekit/call-execution/{call_id}/": ["patch"],
       "/simulate/api/livekit/listener-token/{call_id}/": ["get"],
@@ -2038,6 +2044,7 @@ export const API_SURFACE_PATHS = Object.freeze({
   "/simulate/api/harness-jobs/{id}/": ["get"],
   "/simulate/api/harness-jobs/{id}/adjust/": ["post"],
   "/simulate/api/harness-jobs/{id}/cancel/": ["post"],
+  "/simulate/api/harness-jobs/{id}/conversation/messages/": ["post"],
   "/simulate/api/harness-jobs/{id}/extend/": ["post"],
   "/simulate/api/harness/attempts/{id}/artifacts/manifest/": ["post"],
   "/simulate/api/harness/attempts/{id}/artifacts/{artifact_digest}/": ["put"],
@@ -2045,6 +2052,11 @@ export const API_SURFACE_PATHS = Object.freeze({
   "/simulate/api/harness/attempts/{id}/ingress/": ["post"],
   "/simulate/api/harness/attempts/{id}/results/": ["post"],
   "/simulate/api/harness/attempts/{id}/scenarios/": ["post"],
+  "/simulate/api/harness/conversations/{id}/commands/": ["get"],
+  "/simulate/api/harness/conversations/{id}/events/": ["post"],
+  "/simulate/api/harness/conversations/{id}/rerun/": ["post"],
+  "/simulate/api/harness/conversations/{id}/run-status/": ["get"],
+  "/simulate/api/harness/conversations/{id}/workspace/": ["put"],
   "/simulate/api/livekit/call-config/{call_id}/": ["get"],
   "/simulate/api/livekit/call-execution/{call_id}/": ["patch"],
   "/simulate/api/livekit/listener-token/{call_id}/": ["get"],

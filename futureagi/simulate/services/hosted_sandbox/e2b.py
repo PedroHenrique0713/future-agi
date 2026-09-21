@@ -328,9 +328,7 @@ class E2BSandboxRuntimeProvider(SandboxRuntimeProvider):
                 "rm -f /usr/local/bin/python && "
                 "printf '#!/bin/sh\\nexec /opt/alk-venv/bin/python \"$@\"\\n' "
                 "> /usr/local/bin/python && chmod 0755 /usr/local/bin/python && "
-                "ln -sfn /opt/alk-venv/bin/pip /usr/local/bin/pip && "
-                "ln -sfn /opt/alk-venv/bin/uv /usr/local/bin/uv && "
-                "ln -sfn /opt/alk-venv/bin/uvx /usr/local/bin/uvx",
+                "ln -sfn /opt/alk-venv/bin/pip /usr/local/bin/pip",
                 timeout=min(timeout, 60),
                 user="root",
             )

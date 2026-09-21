@@ -16954,6 +16954,104 @@ export interface HarnessRuntimeReadApi {
   diagnostics?: HarnessDiagnosticsApi;
 }
 
+export type HarnessConversationMessageApiRole =
+  (typeof HarnessConversationMessageApiRole)[keyof typeof HarnessConversationMessageApiRole];
+
+export const HarnessConversationMessageApiRole = {
+  user: "user",
+  assistant: "assistant",
+  system: "system",
+} as const;
+
+export type HarnessConversationMessageApiKind =
+  (typeof HarnessConversationMessageApiKind)[keyof typeof HarnessConversationMessageApiKind];
+
+export const HarnessConversationMessageApiKind = {
+  message: "message",
+  question: "question",
+  confirmation: "confirmation",
+  status: "status",
+} as const;
+
+export type HarnessConversationMessageApiState =
+  (typeof HarnessConversationMessageApiState)[keyof typeof HarnessConversationMessageApiState];
+
+export const HarnessConversationMessageApiState = {
+  queued: "queued",
+  delivered: "delivered",
+  streaming: "streaming",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export type HarnessConversationMessageApiPayload = { [key: string]: unknown };
+
+export interface HarnessConversationMessageApi {
+  message_id: string;
+  /** @minimum 1 */
+  sequence: number;
+  role: HarnessConversationMessageApiRole;
+  kind: HarnessConversationMessageApiKind;
+  state: HarnessConversationMessageApiState;
+  stage: string;
+  content: string;
+  payload: HarnessConversationMessageApiPayload;
+  /** @minLength 1 */
+  invocation_id?: string;
+  /** @minLength 1 */
+  function_call_id?: string;
+  reply_to?: string;
+  created_at: string;
+}
+
+export type HarnessConversationEventReadApiPayload = { [key: string]: unknown };
+
+export interface HarnessConversationEventReadApi {
+  /** @minLength 1 */
+  event_id: string;
+  /** @minimum 1 */
+  sequence: number;
+  /** @minLength 1 */
+  kind: string;
+  message_id?: string;
+  stage: string;
+  /** @minLength 1 */
+  invocation_id?: string;
+  /** @minLength 1 */
+  function_call_id?: string;
+  payload: HarnessConversationEventReadApiPayload;
+  emitted_at: string;
+}
+
+export interface HarnessConversationRuntimeApi {
+  /** @minLength 1 */
+  state: string;
+  warm_until: string;
+  degraded: boolean;
+  available: boolean;
+}
+
+export type HarnessConversationReadApiBlockingInput = {
+  [key: string]: unknown;
+};
+
+export interface HarnessConversationReadApi {
+  conversation_id: string;
+  job_id: string;
+  /** @minLength 1 */
+  state: string;
+  /** @minLength 1 */
+  stage: string;
+  /** @minLength 1 */
+  active_invocation_id: string;
+  blocking_input: HarnessConversationReadApiBlockingInput;
+  messages: HarnessConversationMessageApi[];
+  events: HarnessConversationEventReadApi[];
+  /** @minimum 0 */
+  event_watermark: number;
+  runtime: HarnessConversationRuntimeApi;
+}
+
 export interface HarnessJobReadApi {
   job: HarnessJobInfoApi;
   status: HarnessJobStatusApi;
@@ -16963,6 +17061,7 @@ export interface HarnessJobReadApi {
   receipts: HarnessJobReadApiReceiptsItem[];
   platform: HarnessPlatformApi;
   runtime?: HarnessRuntimeReadApi;
+  conversation?: HarnessConversationReadApi;
 }
 
 export type HarnessJobCreateApiSchemaVersion =
@@ -27957,6 +28056,151 @@ export interface ActivationResponseApi {
   scope: ActivationResponseApiScope;
 }
 
+export type HarnessConversationMessageCreateApiKind =
+  (typeof HarnessConversationMessageCreateApiKind)[keyof typeof HarnessConversationMessageCreateApiKind];
+
+export const HarnessConversationMessageCreateApiKind = {
+  user_message: "user_message",
+  user_response: "user_response",
+  approval: "approval",
+  interrupt: "interrupt",
+  cancel_operation: "cancel_operation",
+} as const;
+
+export type HarnessConversationMessageCreateApiPayload = {
+  [key: string]: unknown;
+};
+
+export interface HarnessConversationMessageCreateApi {
+  /**
+   * @minLength 1
+   * @maxLength 20000
+   */
+  content: string;
+  /**
+   * @minLength 1
+   * @pattern ^[A-Za-z0-9_-]{1,128}$
+   */
+  client_request_id: string;
+  kind?: HarnessConversationMessageCreateApiKind;
+  reply_to?: string;
+  payload?: HarnessConversationMessageCreateApiPayload;
+}
+
+export type HarnessConversationEventBatchApiSchemaVersion =
+  (typeof HarnessConversationEventBatchApiSchemaVersion)[keyof typeof HarnessConversationEventBatchApiSchemaVersion];
+
+export const HarnessConversationEventBatchApiSchemaVersion = {
+  "futureagiharness-conversation-eventv1":
+    "futureagi.harness-conversation-event.v1",
+} as const;
+
+export type HarnessConversationEventApiSchemaVersion =
+  (typeof HarnessConversationEventApiSchemaVersion)[keyof typeof HarnessConversationEventApiSchemaVersion];
+
+export const HarnessConversationEventApiSchemaVersion = {
+  "futureagiharness-conversation-eventv1":
+    "futureagi.harness-conversation-event.v1",
+} as const;
+
+export type HarnessConversationEventApiKind =
+  (typeof HarnessConversationEventApiKind)[keyof typeof HarnessConversationEventApiKind];
+
+export const HarnessConversationEventApiKind = {
+  turn_started: "turn_started",
+  assistant_delta: "assistant_delta",
+  assistant_message: "assistant_message",
+  stage_changed: "stage_changed",
+  tool_started: "tool_started",
+  tool_result: "tool_result",
+  question_requested: "question_requested",
+  confirmation_requested: "confirmation_requested",
+  turn_interrupted: "turn_interrupted",
+  turn_completed: "turn_completed",
+  checkpoint_committed: "checkpoint_committed",
+  capability_changed: "capability_changed",
+} as const;
+
+export type HarnessConversationEventApiPayload = { [key: string]: unknown };
+
+export interface HarnessConversationEventApi {
+  schema_version: HarnessConversationEventApiSchemaVersion;
+  /**
+   * @minLength 1
+   * @pattern ^[A-Za-z0-9_-]{1,128}$
+   */
+  event_id: string;
+  conversation_id: string;
+  /** @minimum 1 */
+  sequence: number;
+  kind: HarnessConversationEventApiKind;
+  message_id?: string;
+  /** @maxLength 32 */
+  stage?: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  invocation_id?: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  function_call_id?: string;
+  emitted_at: string;
+  payload: HarnessConversationEventApiPayload;
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[0-9a-f]{64}$
+   */
+  digest: string;
+}
+
+export interface HarnessConversationEventBatchApi {
+  schema_version: HarnessConversationEventBatchApiSchemaVersion;
+  /** @minimum 0 */
+  acknowledged_through: number;
+  events: HarnessConversationEventApi[];
+}
+
+export interface HarnessConversationEventAckApi {
+  /** @minimum 0 */
+  acked_through_sequence: number;
+}
+
+export interface HarnessConversationRerunApi {
+  [key: string]: unknown;
+}
+
+export type HarnessConversationRunStatusApiReceipts = {
+  [key: string]: unknown;
+};
+
+export interface HarnessConversationRunStatusApi {
+  job_id: string;
+  /** @minLength 1 */
+  state: string;
+  /** @minLength 1 */
+  stage: string;
+  /** @minimum 0 */
+  completed_scenarios: number;
+  /** @minimum 0 */
+  failed_scenarios: number;
+  /** @minimum 0 */
+  total_scenarios: number;
+  receipts: HarnessConversationRunStatusApiReceipts;
+}
+
+export interface HarnessConversationWorkspaceResponseApi {
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[0-9a-f]{64}$
+   */
+  digest: string;
+  /** @minimum 0 */
+  size: number;
+}
+
 export type AccountsAwsMarketplaceLaunchSoftwareCreateBody = {
   "x-amzn-marketplace-token": string;
   "x-amzn-marketplace-product-id"?: string;
@@ -32509,4 +32753,11 @@ export type UsageWorkspaceUsageSummaryListParams = {
    */
   month?: number;
   year?: number;
+};
+
+export type SimulateApiHarnessConversationsCommandsParams = {
+  /**
+   * @minimum 0
+   */
+  after?: number;
 };

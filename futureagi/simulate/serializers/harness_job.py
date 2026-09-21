@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from rest_framework import serializers
+from simulate.serializers.hosted_harness_conversation import (
+    HarnessConversationReadSerializer,
+)
 
 RUNNER_RESERVED_ENVIRONMENT = {
     "DOCKER_HOST",
@@ -410,18 +413,6 @@ class HarnessPreflightSerializer(HarnessJobCreateSerializer):
     )
 
 
-class HarnessJobAdjustmentSerializer(serializers.Serializer):
-    instruction = serializers.CharField(
-        min_length=1,
-        max_length=2000,
-        trim_whitespace=True,
-        help_text="A user correction to apply at the next safe harness stage boundary.",
-    )
-    client_request_id = serializers.CharField(
-        max_length=128, required=False, allow_blank=False
-    )
-
-
 class HarnessJobExtendSerializer(serializers.Serializer):
     # The finished-run chat box adds scenarios through an explicit "Add scenarios" action, so
     # the request carries a structured ``count`` plus optional free-text ``guidance`` rather
@@ -576,3 +567,4 @@ class HarnessJobReadSerializer(serializers.Serializer):
     receipts = serializers.ListField(child=serializers.JSONField())
     platform = HarnessPlatformSerializer()
     runtime = HarnessRuntimeReadSerializer(required=False)
+    conversation = HarnessConversationReadSerializer(allow_null=True, required=False)

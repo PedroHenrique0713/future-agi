@@ -102,6 +102,7 @@ from .views.agent_version import (
 from .views.alk_simulate_ingestion import ALKSimulateIngestionViewSet
 from .views.harness_job import HarnessJobViewSet
 from .views.hosted_harness import HostedHarnessAttemptViewSet
+from .views.hosted_harness_conversation import HostedHarnessConversationViewSet
 from .views.livekit_api import (
     CallConfigView,
     CallExecutionUpdateView,
@@ -134,6 +135,11 @@ router.register(
     r"harness/attempts",
     HostedHarnessAttemptViewSet,
     basename="hosted-harness-attempt",
+)
+router.register(
+    r"harness/conversations",
+    HostedHarnessConversationViewSet,
+    basename="hosted-harness-conversation",
 )
 
 urlpatterns = [

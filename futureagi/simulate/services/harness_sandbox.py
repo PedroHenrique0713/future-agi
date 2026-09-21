@@ -72,7 +72,9 @@ class HarnessSandboxClient:
             timeout=(5, 300),
         )
 
-    def upload_secret_file(self, uploaded: Any, environment_name: str) -> dict[str, Any]:
+    def upload_secret_file(
+        self, uploaded: Any, environment_name: str
+    ) -> dict[str, Any]:
         """Transfer a credential file directly to the execution provider.
 
         The platform does not deserialize, log or place its contents in a JSON payload. The
@@ -101,9 +103,6 @@ class HarnessSandboxClient:
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         return self._request("POST", f"/v1/jobs/{job_id}/cancel")
-
-    def adjust(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._request("POST", f"/v1/jobs/{job_id}/adjust", json=payload)
 
     def _request(
         self,

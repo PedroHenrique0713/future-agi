@@ -1418,8 +1418,35 @@ class TestExecutionCancelView(APIView):
             cancel_test_execution,
             cancel_workflow,
         )
-
+        from simulate.models import HostedHarnessJob
+        from simulate.services.hosted_harness import request_cancellation
         test_execution_id = str(test_execution.id)
+
+        hosted_job = HostedHarnessJob.no_workspace_objects.filter(
+            test_execution_id=test_execution.id
+        ).first()
+        if hosted_job is not None:
+            reason = "user_canceled"
+            request_cancellation(hosted_job, reason)
+            try:
+                cancel_hosted_harness_gateway_workflow(str(hosted_job.id))
+            except Exception:
+                logger.exception(
+                    "hosted simulation workflow cancellation signal failed job=%s",
+                    hosted_job.id,
+                )
+                from simulate.services.hosted_harness_gateway import (
+                    HostedHarnessGateway,
+                )
+
+                HostedHarnessGateway().cancel(hosted_job, reason=reason)
+            return {
+                "success": True,
+                "message": "Cancellation signal sent to hosted simulation",
+                "test_execution_id": test_execution_id,
+            }
+
+
         any_cancelled = False
 
         try:
