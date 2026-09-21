@@ -174,7 +174,7 @@
 
 **Backend state verified:**
 
-- GET /mcp/config/tool-groups/ omits datasets from enabled_groups
-- PG mcp_server_mcptoolgroupconfig.enabled_groups matches that selection for the actor org
-- GET /mcp/internal/tools/ still lists whoami and no longer lists list_datasets
-- POST /mcp/internal/tool-call/ list_datasets returns 403 while whoami still succeeds
+- GET /mcp/config/tool-groups/ equals the initial group set minus datasets
+- PG mcp_server_mcptoolgroupconfig.enabled_groups equals that exact set for the actor connection
+- GET /mcp/internal/tools/ equals the initial tool set minus all dataset tools
+- POST /mcp/internal/tool-call/ list_datasets returns 403 while whoami and list_projects still succeed
