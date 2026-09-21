@@ -337,18 +337,23 @@ if ($NoUp) {
 # ---- collect first-user creds (up-front so the rest runs unattended) ----
 # Terminal input carries raw bytes, so a stray escape sequence (Shift+Tab emits
 # ESC [ Z) travels into create_user and the sign-in banner.
-$EmailPattern = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+$EmailPattern = '^[A-Za-z0-9.!#$%&''*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
 
 function Remove-ControlChars {
   param([string]$Value)
   if (-not $Value) { return $Value }
-  return ($Value -replace '[\p{C}]', '')
+  return ($Value -replace '[\p{Cc}]', '')
 }
 
 $UserEmail = $null
 $UserName  = $null
 $UserPass  = $null
-$AccountState = 'skipped'
+$AccountSkipped = 'skipped'
+$AccountCreated = 'created'
+$AccountExists  = 'exists'
+$AccountFailed  = 'failed'
+$GateContainers = 'containers to start'
+$AccountState = $AccountSkipped
 
 function Read-Plain {
   param([string]$Prompt, [switch]$Secret)
@@ -397,8 +402,8 @@ if (-not $SkipUserCreation -and -not $NonInteractive) {
   }
 } elseif ($NonInteractive) {
   if ($env:FAGI_ADMIN_EMAIL -and $env:FAGI_ADMIN_NAME -and $env:FAGI_ADMIN_PASSWORD) {
-    $UserEmail = $env:FAGI_ADMIN_EMAIL
-    $UserName  = $env:FAGI_ADMIN_NAME
+    $UserEmail = Remove-ControlChars $env:FAGI_ADMIN_EMAIL
+    $UserName  = Remove-ControlChars $env:FAGI_ADMIN_NAME
     $UserPass  = $env:FAGI_ADMIN_PASSWORD
     Step "Using FAGI_ADMIN_* from environment for first-user creation"
   } else {
@@ -515,11 +520,16 @@ if (-not $BackendPort) { $BackendPort = 8000 }
 $readyTimeout = Get-BoundedEnvInt 'INSTALL_READY_TIMEOUT_SECONDS' 600 60 1800
 $stabilitySeconds = Get-BoundedEnvInt 'INSTALL_STABILITY_SECONDS' 15 5 120
 $readyMax = Get-BoundedEnvInt 'INSTALL_READY_MAX_SECONDS' 2400 300 7200
+
+function Get-AppliedMigrationCount {
+  $log = (Invoke-Compose logs --tail 2000 backend 2>&1 | Out-String)
+  return @($log -split "`n" | Where-Object { $_ -match 'Applying ' }).Count
+}
 $deadline = (Get-Date).AddSeconds($readyTimeout)
 $hardDeadline = (Get-Date).AddSeconds($readyMax)
 $readySince = $null
-$lastMigrationsApplied = 0
-$pendingGate = 'containers to start'
+$lastMigrationsApplied = Get-AppliedMigrationCount
+$pendingGate = $GateContainers
 $lastReadySignature = ''
 $catalogJobs = @(
   'property-catalog-kafka-volume-init',
@@ -540,11 +550,13 @@ while ($true) {
   $allReady = $true
   $fatalReason = $null
   $signatureParts = @()
+  $pendingGate = ''
 
   foreach ($service in $catalogJobs) {
     $snapshot = Get-ComposeServiceSnapshot $service
     if ($snapshot.Status -eq 'exited' -and $snapshot.ExitCode -eq 0) { continue }
     $allReady = $false
+    if (-not $pendingGate) { $pendingGate = "bootstrap job $service" }
     if ($snapshot.Status -eq 'dead' -or ($snapshot.Status -eq 'exited' -and $snapshot.ExitCode -ne 0)) {
       $fatalReason = "$service failed with status=$($snapshot.Status) exit_code=$($snapshot.ExitCode)"
       break
@@ -556,6 +568,7 @@ while ($true) {
     $signatureParts += "kafka:$($kafka.Id):$($kafka.RestartCount):$($kafka.StartedAt)"
     if ($kafka.Status -ne 'running' -or $kafka.Health -ne 'healthy') {
       $allReady = $false
+      if (-not $pendingGate) { $pendingGate = 'property-catalog-kafka to report healthy' }
       if ($kafka.Status -eq 'dead') { $fatalReason = 'property-catalog-kafka entered dead state' }
     }
   }
@@ -566,6 +579,7 @@ while ($true) {
       $signatureParts += "$service`:$($snapshot.Id):$($snapshot.RestartCount):$($snapshot.StartedAt)"
       if ($snapshot.Status -ne 'running' -or ($service -eq 'property-catalog-supervisor' -and $snapshot.Health -ne 'healthy')) {
         $allReady = $false
+        if (-not $pendingGate) { $pendingGate = "$service to report healthy" }
         if ($snapshot.Status -eq 'dead') { $fatalReason = "$service entered dead state" }
       }
     }
@@ -578,18 +592,17 @@ while ($true) {
   } catch {
     $backendHealthy = $false
     $allReady = $false
-    $pendingGate = "backend /health/ on port $BackendPort"
+    if (-not $pendingGate) { $pendingGate = "backend /health/ on port $BackendPort" }
   }
 
   # A first install spends most of its readiness budget applying migrations.
   # Extend only while the backend is itself the unmet gate and its migration
   # count is still climbing, so a stuck peer service can never hide behind it.
   if (-not $backendHealthy) {
-    $backendLog = (Invoke-Compose logs --tail 2000 backend 2>&1 | Out-String)
-    $migrationsApplied = ([regex]::Matches($backendLog, 'Applying ')).Count
+    $migrationsApplied = Get-AppliedMigrationCount
     if ($migrationsApplied -gt $lastMigrationsApplied) {
       $lastMigrationsApplied = $migrationsApplied
-      Say "  migrations in progress ($migrationsApplied applied) -- extending the readiness window"
+      Say "  migrations in progress ($migrationsApplied applied), extending the readiness window"
       $deadline = $now.AddSeconds($readyTimeout)
       if ($deadline -gt $hardDeadline) { $deadline = $hardDeadline }
     }
@@ -618,7 +631,8 @@ while ($true) {
 
   if ($now -ge $deadline) {
     Save-ReadinessDiagnostics
-    Die "Stack did not become fully ready -- still waiting on $pendingGate. Relevant service logs were appended to $LogFile"
+    $gate = if ($pendingGate) { $pendingGate } else { $GateContainers }
+    Die "Stack did not become fully ready, still waiting on $gate. Relevant service logs were appended to $LogFile"
   }
   Start-Sleep -Seconds 5
 }
@@ -630,13 +644,13 @@ if ($UserEmail) {
     --email $UserEmail --name $UserName --password $UserPass 2>&1
   $cuRc = $LASTEXITCODE
   if ($cuRc -eq 0) {
-    $AccountState = 'created'
+    $AccountState = $AccountCreated
     Ok "Account created for $UserEmail"
   } elseif ($cuOut -match '(?i)already exists|UNIQUE constraint') {
-    $AccountState = 'exists'
+    $AccountState = $AccountExists
     Ok "Account already exists for $UserEmail -- sign in normally"
   } else {
-    $AccountState = 'failed'
+    $AccountState = $AccountFailed
     Warn "create_user failed (exit $cuRc). Last 6 lines:"
     ($cuOut | Out-String).Split([char]10) | Select-Object -Last 6 | ForEach-Object { Say "      $_" }
   }
@@ -663,13 +677,13 @@ Say ""
 Say "  Existing-data catalog backfill"
 Say "    Restarts do not scan historical data automatically. After an upgrade:"
 Say "    .\bin\property-catalog-backfill.ps1 -Execute"
-if ($AccountState -eq 'created' -or $AccountState -eq 'exists') {
+if ($AccountState -eq $AccountCreated -or $AccountState -eq $AccountExists) {
   Say ""
   Say "  Sign in as $UserEmail"
   Say "    ->  http://localhost:$FrontendPort/auth/jwt/login"
-} elseif ($AccountState -eq 'failed') {
+} elseif ($AccountState -eq $AccountFailed) {
   Say ""
-  Say "  ACTION REQUIRED -- no account was created"
+  Say "  ACTION REQUIRED: no account was created"
   Say "    The stack is running, but you cannot sign in until you create one:"
   Say "    docker exec -it futureagi-backend-1 python manage.py create_user"
 }
@@ -680,5 +694,5 @@ Say "  Tail logs:   $DcCmd $($DcArgs -join ' ') logs -f"
 Say "  Install log: $LogFile"
 Say ""
 
-if ($AccountState -eq 'failed') { exit 1 }
+if ($AccountState -eq $AccountFailed) { exit 1 }
 exit 0

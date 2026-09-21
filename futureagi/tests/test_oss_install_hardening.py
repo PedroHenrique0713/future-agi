@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import shutil
 import subprocess
 import sys
@@ -572,8 +573,13 @@ def test_installer_extends_the_readiness_window_while_migrations_are_applying(
     code, stdout, stderr = _run_installer(script, environment, "--skip-user-creation")
 
     assert code == 0, stderr
-    assert "migrations in progress (1 applied)" in stdout
-    assert "migrations in progress (15 applied)" in stdout
+    applied = [
+        int(match)
+        for match in re.findall(r"migrations in progress \((\d+) applied\)", stdout)
+    ]
+    assert applied == sorted(applied)
+    assert len(applied) >= 5
+    assert applied[-1] > applied[0]
     assert "Backend healthy at http://localhost:8000" in stdout
     assert "did not become fully ready" not in stdout + stderr
     assert _readiness_ticks(state) >= 20
@@ -608,7 +614,8 @@ def test_installer_refuses_to_extend_the_window_for_an_unready_peer_service(
     code, stdout, stderr = _run_installer(script, environment, "--skip-user-creation")
 
     assert code == 1
-    assert "still waiting on containers to start" in stderr
+    assert "still waiting on property-catalog-supervisor to report healthy" in stderr
+    assert "backend /health/" not in stderr
     assert "extending the readiness window" not in stdout
     assert _readiness_ticks(state) <= 15
 

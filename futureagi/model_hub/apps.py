@@ -23,9 +23,8 @@ STARTUP_SAFE_MANAGEMENT_COMMANDS = frozenset(
         "ch25_property_catalog_lifecycle_controller",
         "check",
         "collectstatic",
-        # First-account bootstrap for self-hosted installs. Writes a single row
-        # through accounts.utils.first_signup and never touches schema, so the
-        # mutation-free startup contract still holds.
+        # First-account bootstrap for self-hosted installs; AppConfig.ready
+        # stays mutation-free.
         "create_user",
         "generate_swagger",
         "grpcrunaioserver",
