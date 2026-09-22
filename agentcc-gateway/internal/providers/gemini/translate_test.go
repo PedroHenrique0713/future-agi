@@ -266,7 +266,7 @@ func TestTranslateRequest_Tools(t *testing.T) {
 	}
 }
 
-func TestTranslateRequest_PreservesJSONToolSchemaForGemini(t *testing.T) {
+func TestTranslateRequest_NormalizesJSONToolSchemaForGemini(t *testing.T) {
 	params := json.RawMessage(`{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"type": "object",
@@ -300,8 +300,9 @@ func TestTranslateRequest_PreservesJSONToolSchemaForGemini(t *testing.T) {
 	gr, _ := translateRequest(req)
 
 	got := string(gr.Tools[0].FunctionDeclarations[0].ParametersJSONSchema)
-	if got != string(params) {
-		t.Errorf("ParametersJSONSchema = %s, want %s", got, params)
+	want := string(normalizeToolSchema(params))
+	if got != want {
+		t.Errorf("ParametersJSONSchema = %s, want %s", got, want)
 	}
 }
 
@@ -351,7 +352,7 @@ func TestTranslateRequest_ToolsRemoveUnsupportedVertexSchemaKeywords(t *testing.
 	}
 
 	gr, _ := translateRequest(req)
-	got := string(gr.Tools[0].FunctionDeclarations[0].Parameters)
+	got := string(gr.Tools[0].FunctionDeclarations[0].ParametersJSONSchema)
 	for _, unsupported := range []string{"$schema", "exclusiveMinimum", "propertyNames"} {
 		if strings.Contains(got, unsupported) {
 			t.Errorf("Parameters still contain unsupported keyword %q: %s", unsupported, got)
