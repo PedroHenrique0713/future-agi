@@ -569,6 +569,7 @@ import type {
   HarnessConversationWorkspaceResponseApi,
   HarnessEventBatchApi,
   HarnessEventBatchResponseApi,
+  HarnessIngressProxyRequestApi,
   HarnessIngressRequestApi,
   HarnessIngressResponseApi,
   HarnessJobActionApi,
@@ -59520,20 +59521,27 @@ export const simulateApiHarnessIngressRead = async (
   );
 };
 
+export type simulateApiHarnessIngressCreateResponse200 = {
+  data: Blob;
+  status: 200;
+};
+
 export type simulateApiHarnessIngressCreateResponse201 = {
-  data: void;
+  data: Blob;
   status: 201;
 };
 
 export type simulateApiHarnessIngressCreateResponseDefault = {
   data: ManagementAPIErrorResponseApi;
-  status: Exclude<HTTPStatusCodes, 201>;
+  status: Exclude<HTTPStatusCodes, 200 | 201>;
 };
 
-export type simulateApiHarnessIngressCreateResponseSuccess =
-  simulateApiHarnessIngressCreateResponse201 & {
-    headers: Headers;
-  };
+export type simulateApiHarnessIngressCreateResponseSuccess = (
+  | simulateApiHarnessIngressCreateResponse200
+  | simulateApiHarnessIngressCreateResponse201
+) & {
+  headers: Headers;
+};
 export type simulateApiHarnessIngressCreateResponseError =
   simulateApiHarnessIngressCreateResponseDefault & {
     headers: Headers;
@@ -59556,6 +59564,7 @@ export const getSimulateApiHarnessIngressCreateUrl = (
 export const simulateApiHarnessIngressCreate = async (
   token: string,
   targetPath: string,
+  harnessIngressProxyRequestApi: HarnessIngressProxyRequestApi,
   options?: RequestInit,
 ): Promise<simulateApiHarnessIngressCreateResponse> => {
   return apiMutator<simulateApiHarnessIngressCreateResponse>(
@@ -59563,24 +59572,33 @@ export const simulateApiHarnessIngressCreate = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(harnessIngressProxyRequestApi),
     },
   );
 };
 
 export type simulateApiHarnessIngressUpdateResponse200 = {
-  data: void;
+  data: Blob;
   status: 200;
+};
+
+export type simulateApiHarnessIngressUpdateResponse201 = {
+  data: Blob;
+  status: 201;
 };
 
 export type simulateApiHarnessIngressUpdateResponseDefault = {
   data: ManagementAPIErrorResponseApi;
-  status: Exclude<HTTPStatusCodes, 200>;
+  status: Exclude<HTTPStatusCodes, 200 | 201>;
 };
 
-export type simulateApiHarnessIngressUpdateResponseSuccess =
-  simulateApiHarnessIngressUpdateResponse200 & {
-    headers: Headers;
-  };
+export type simulateApiHarnessIngressUpdateResponseSuccess = (
+  | simulateApiHarnessIngressUpdateResponse200
+  | simulateApiHarnessIngressUpdateResponse201
+) & {
+  headers: Headers;
+};
 export type simulateApiHarnessIngressUpdateResponseError =
   simulateApiHarnessIngressUpdateResponseDefault & {
     headers: Headers;
@@ -59603,6 +59621,7 @@ export const getSimulateApiHarnessIngressUpdateUrl = (
 export const simulateApiHarnessIngressUpdate = async (
   token: string,
   targetPath: string,
+  harnessIngressProxyRequestApi: HarnessIngressProxyRequestApi,
   options?: RequestInit,
 ): Promise<simulateApiHarnessIngressUpdateResponse> => {
   return apiMutator<simulateApiHarnessIngressUpdateResponse>(
@@ -59610,24 +59629,33 @@ export const simulateApiHarnessIngressUpdate = async (
     {
       ...options,
       method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(harnessIngressProxyRequestApi),
     },
   );
 };
 
 export type simulateApiHarnessIngressPartialUpdateResponse200 = {
-  data: void;
+  data: Blob;
   status: 200;
+};
+
+export type simulateApiHarnessIngressPartialUpdateResponse201 = {
+  data: Blob;
+  status: 201;
 };
 
 export type simulateApiHarnessIngressPartialUpdateResponseDefault = {
   data: ManagementAPIErrorResponseApi;
-  status: Exclude<HTTPStatusCodes, 200>;
+  status: Exclude<HTTPStatusCodes, 200 | 201>;
 };
 
-export type simulateApiHarnessIngressPartialUpdateResponseSuccess =
-  simulateApiHarnessIngressPartialUpdateResponse200 & {
-    headers: Headers;
-  };
+export type simulateApiHarnessIngressPartialUpdateResponseSuccess = (
+  | simulateApiHarnessIngressPartialUpdateResponse200
+  | simulateApiHarnessIngressPartialUpdateResponse201
+) & {
+  headers: Headers;
+};
 export type simulateApiHarnessIngressPartialUpdateResponseError =
   simulateApiHarnessIngressPartialUpdateResponseDefault & {
     headers: Headers;
@@ -59650,6 +59678,7 @@ export const getSimulateApiHarnessIngressPartialUpdateUrl = (
 export const simulateApiHarnessIngressPartialUpdate = async (
   token: string,
   targetPath: string,
+  harnessIngressProxyRequestApi: HarnessIngressProxyRequestApi,
   options?: RequestInit,
 ): Promise<simulateApiHarnessIngressPartialUpdateResponse> => {
   return apiMutator<simulateApiHarnessIngressPartialUpdateResponse>(
@@ -59657,6 +59686,8 @@ export const simulateApiHarnessIngressPartialUpdate = async (
     {
       ...options,
       method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(harnessIngressProxyRequestApi),
     },
   );
 };

@@ -28252,11 +28252,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       post: {
         operationId: "simulate_api_harness_ingress_create",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -28264,11 +28274,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       put: {
         operationId: "simulate_api_harness_ingress_update",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -28276,11 +28296,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       patch: {
         operationId: "simulate_api_harness_ingress_partial_update",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -28314,11 +28344,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       post: {
         operationId: "simulate_api_harness_ingress_create",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -28326,11 +28366,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       put: {
         operationId: "simulate_api_harness_ingress_update",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -28338,11 +28388,21 @@ export const OPENAPI_CONTRACT = Object.freeze({
       },
       patch: {
         operationId: "simulate_api_harness_ingress_partial_update",
-        runtimeRequestValidation: false,
-        runtimeResponseValidation: false,
-        requestBody: null,
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessIngressProxyRequest",
+        },
         queryParameters: {},
         responses: {
+          200: {
+            type: "string",
+            format: "binary",
+          },
+          201: {
+            type: "string",
+            format: "binary",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -59894,6 +59954,15 @@ export const OPENAPI_CONTRACT = Object.freeze({
           items: {
             $ref: "#/definitions/HarnessEventRejection",
           },
+        },
+      },
+    },
+    HarnessIngressProxyRequest: {
+      type: "object",
+      properties: {
+        payload: {
+          title: "Payload",
+          type: "object",
         },
       },
     },

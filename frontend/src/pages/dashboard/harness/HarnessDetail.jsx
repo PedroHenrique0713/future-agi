@@ -354,6 +354,7 @@ export default function HarnessDetail() {
   const cancellationRequested = Boolean(status?.cancel_requested_at);
   const progress = jobProgress(status);
   const isTerminal = terminalStages.has(status?.stage);
+  const conversationComposerAvailable = chatAvailable || !isTerminal;
   const blockingReplyTo = chatAvailable
     ? current?.conversation?.blocking_input?.message_id || null
     : null;
@@ -1520,7 +1521,7 @@ export default function HarnessDetail() {
                     multiline
                     maxRows={8}
                     placeholder={
-                      chatAvailable
+                      conversationComposerAvailable
                         ? blockingReplyTo
                           ? "Answer ALK’s question…"
                           : "Ask ALK about this environment or tell it what to change…"
@@ -1528,16 +1529,18 @@ export default function HarnessDetail() {
                           ? "Describe the scenarios to add — e.g. 'calm first-time riders booking an airport pickup' (optional)"
                           : "Tell the run what to change…"
                     }
-                    value={chatAvailable ? message : adjustment}
+                    value={
+                      conversationComposerAvailable ? message : adjustment
+                    }
                     onChange={(event) =>
-                      chatAvailable
+                      conversationComposerAvailable
                         ? setMessage(event.target.value)
                         : setAdjustment(event.target.value)
                     }
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" || event.shiftKey) return;
                       event.preventDefault();
-                      if (chatAvailable) {
+                      if (conversationComposerAvailable) {
                         const content = message.trim();
                         if (!content || sendingMessage) return;
                         sendMessage({
@@ -1564,13 +1567,13 @@ export default function HarnessDetail() {
                     sx={{ px: 1.5, pb: 1, pt: 0.5 }}
                   >
                     <Typography variant="caption" color="text.disabled">
-                      {chatAvailable
+                      {conversationComposerAvailable
                         ? "ALK answers directly and requests safe adjustments when needed"
                         : isTerminal
                           ? "Adds scenarios to the saved world"
                           : "Applied at the next stage boundary"}
                     </Typography>
-                    {chatAvailable ? (
+                    {conversationComposerAvailable ? (
                       <IconButton
                         size="small"
                         onClick={() => {

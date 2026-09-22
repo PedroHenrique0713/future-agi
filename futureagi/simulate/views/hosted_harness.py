@@ -18,6 +18,7 @@ from simulate.serializers.hosted_harness import (
     HarnessArtifactUploadResponseSerializer,
     HarnessEventBatchResponseSerializer,
     HarnessEventBatchSerializer,
+    HarnessIngressProxyRequestSerializer,
     HarnessIngressRequestSerializer,
     HarnessIngressResponseSerializer,
     HarnessManifestSerializer,
@@ -48,6 +49,14 @@ from simulate.services.hosted_harness_ingress import (
 from tfc.utils.api_contracts import validated_request
 
 logger = logging.getLogger(__name__)
+_INGRESS_REQUEST_SCHEMA = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    additional_properties=True,
+)
+_INGRESS_RESPONSE = openapi.Response(
+    description="Raw response returned by the sandbox callback service.",
+    schema=openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY),
+)
 
 
 class HostedHarnessAttemptViewSet(viewsets.ViewSet):
@@ -263,9 +272,27 @@ class HostedHarnessIngressProxyView(APIView):
         return proxy_ingress_request(request, token, target_path)
 
     get = _proxy
-    post = _proxy
-    put = _proxy
-    patch = _proxy
+
+    @validated_request(
+        request_serializer=HarnessIngressProxyRequestSerializer,
+        responses={200: _INGRESS_RESPONSE, 201: _INGRESS_RESPONSE},
+    )
+    def post(self, request, token, target_path=""):
+        return self._proxy(request, token, target_path)
+
+    @validated_request(
+        request_serializer=HarnessIngressProxyRequestSerializer,
+        responses={200: _INGRESS_RESPONSE, 201: _INGRESS_RESPONSE},
+    )
+    def put(self, request, token, target_path=""):
+        return self._proxy(request, token, target_path)
+
+    @validated_request(
+        request_serializer=HarnessIngressProxyRequestSerializer,
+        responses={200: _INGRESS_RESPONSE, 201: _INGRESS_RESPONSE},
+    )
+    def patch(self, request, token, target_path=""):
+        return self._proxy(request, token, target_path)
     delete = _proxy
     head = _proxy
     options = _proxy

@@ -18045,6 +18045,12 @@ export interface HarnessConversationWorkspaceResponseApi {
   size: number;
 }
 
+export type HarnessIngressProxyRequestApiPayload = { [key: string]: unknown };
+
+export interface HarnessIngressProxyRequestApi {
+  payload?: HarnessIngressProxyRequestApiPayload;
+}
+
 export type LiveKitCallConfigResponseApiCallMetadata = {
   [key: string]: { [key: string]: unknown };
 };

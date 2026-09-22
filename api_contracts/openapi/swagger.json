@@ -51263,10 +51263,30 @@
             "post": {
                 "operationId": "simulate_api_harness_ingress_create",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
+                    "200": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
                     "201": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51277,15 +51297,37 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "put": {
                 "operationId": "simulate_api_harness_ingress_update",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
+                    "201": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51296,15 +51338,37 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "patch": {
                 "operationId": "simulate_api_harness_ingress_partial_update",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
+                    "201": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51315,7 +51379,9 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "delete": {
                 "operationId": "simulate_api_harness_ingress_delete",
@@ -51368,10 +51434,30 @@
             "post": {
                 "operationId": "simulate_api_harness_ingress_create",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
+                    "200": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
                     "201": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51382,15 +51468,37 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "put": {
                 "operationId": "simulate_api_harness_ingress_update",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
+                    "201": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51401,15 +51509,37 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "patch": {
                 "operationId": "simulate_api_harness_ingress_partial_update",
                 "description": "Relay a signed callback URL to the active sandbox without exposing provider headers.",
-                "parameters": [],
+                "parameters": [
+                    {
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/HarnessIngressProxyRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": ""
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
+                    },
+                    "201": {
+                        "description": "Raw response returned by the sandbox callback service.",
+                        "schema": {
+                            "type": "string",
+                            "format": "binary"
+                        }
                     },
                     "default": {
                         "description": "Default error response",
@@ -51420,7 +51550,9 @@
                 },
                 "tags": [
                     "simulate"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "delete": {
                 "operationId": "simulate_api_harness_ingress_delete",
@@ -121619,6 +121751,15 @@
                     "title": "Size",
                     "type": "integer",
                     "minimum": 0
+                }
+            }
+        },
+        "HarnessIngressProxyRequest": {
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "title": "Payload",
+                    "type": "object"
                 }
             }
         },

@@ -36958,6 +36958,12 @@ export const SimulateApiHarnessIngressCreateParams = zod.object({
   target_path: zod.string(),
 });
 
+export const SimulateApiHarnessIngressCreateBody = zod.object({
+  payload: zod.object({}).passthrough().optional(),
+});
+
+export const SimulateApiHarnessIngressCreateResponse = zod.instanceof(File);
+
 /**
  * Relay a signed callback URL to the active sandbox without exposing provider headers.
  */
@@ -36966,6 +36972,12 @@ export const SimulateApiHarnessIngressUpdateParams = zod.object({
   target_path: zod.string(),
 });
 
+export const SimulateApiHarnessIngressUpdateBody = zod.object({
+  payload: zod.object({}).passthrough().optional(),
+});
+
+export const SimulateApiHarnessIngressUpdateResponse = zod.instanceof(File);
+
 /**
  * Relay a signed callback URL to the active sandbox without exposing provider headers.
  */
@@ -36973,6 +36985,13 @@ export const SimulateApiHarnessIngressPartialUpdateParams = zod.object({
   token: zod.string(),
   target_path: zod.string(),
 });
+
+export const SimulateApiHarnessIngressPartialUpdateBody = zod.object({
+  payload: zod.object({}).passthrough().optional(),
+});
+
+export const SimulateApiHarnessIngressPartialUpdateResponse =
+  zod.instanceof(File);
 
 /**
  * Relay a signed callback URL to the active sandbox without exposing provider headers.

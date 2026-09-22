@@ -3,7 +3,7 @@
   "summary": {
     "paths": 1017,
     "operations": 1384,
-    "mutation_endpoints_without_body_schema": 6,
+    "mutation_endpoints_without_body_schema": 0,
     "operations_without_response_schema": 0,
     "broad_success_response_schemas": 0,
     "operations_without_error_response_schema": 0,
@@ -130,7 +130,7 @@
     "simulate": {
       "paths": 142,
       "operations": 171,
-      "mutation_endpoints_without_body_schema": 6,
+      "mutation_endpoints_without_body_schema": 0,
       "operations_without_response_schema": 0,
       "broad_success_response_schemas": 0,
       "operations_without_error_response_schema": 0,
@@ -173,62 +173,7 @@
       "broad_error_response_schemas": 0
     }
   },
-  "mutation_endpoints_without_body_schema": [
-    {
-      "group": "simulate",
-      "method": "POST",
-      "path": "/simulate/api/harness/ingress/{token}/",
-      "operation_id": "simulate_api_harness_ingress_create",
-      "tags": [
-        "simulate"
-      ]
-    },
-    {
-      "group": "simulate",
-      "method": "PUT",
-      "path": "/simulate/api/harness/ingress/{token}/",
-      "operation_id": "simulate_api_harness_ingress_update",
-      "tags": [
-        "simulate"
-      ]
-    },
-    {
-      "group": "simulate",
-      "method": "PATCH",
-      "path": "/simulate/api/harness/ingress/{token}/",
-      "operation_id": "simulate_api_harness_ingress_partial_update",
-      "tags": [
-        "simulate"
-      ]
-    },
-    {
-      "group": "simulate",
-      "method": "POST",
-      "path": "/simulate/api/harness/ingress/{token}/{target_path}",
-      "operation_id": "simulate_api_harness_ingress_create",
-      "tags": [
-        "simulate"
-      ]
-    },
-    {
-      "group": "simulate",
-      "method": "PUT",
-      "path": "/simulate/api/harness/ingress/{token}/{target_path}",
-      "operation_id": "simulate_api_harness_ingress_update",
-      "tags": [
-        "simulate"
-      ]
-    },
-    {
-      "group": "simulate",
-      "method": "PATCH",
-      "path": "/simulate/api/harness/ingress/{token}/{target_path}",
-      "operation_id": "simulate_api_harness_ingress_partial_update",
-      "tags": [
-        "simulate"
-      ]
-    }
-  ],
+  "mutation_endpoints_without_body_schema": [],
   "operations_without_response_schema": [],
   "broad_success_response_schemas": []
 }
