@@ -58663,10 +58663,15 @@ export type simulateApiHarnessJobsConversationConversationMessageResponse202 = {
   status: 202;
 };
 
+export type simulateApiHarnessJobsConversationConversationMessageResponse409 = {
+  data: ApiTextErrorResponseApi;
+  status: 409;
+};
+
 export type simulateApiHarnessJobsConversationConversationMessageResponseDefault =
   {
     data: ManagementAPIErrorResponseApi;
-    status: Exclude<HTTPStatusCodes, 202>;
+    status: Exclude<HTTPStatusCodes, 202 | 409>;
   };
 
 export type simulateApiHarnessJobsConversationConversationMessageResponseSuccess =
@@ -58674,7 +58679,10 @@ export type simulateApiHarnessJobsConversationConversationMessageResponseSuccess
     headers: Headers;
   };
 export type simulateApiHarnessJobsConversationConversationMessageResponseError =
-  simulateApiHarnessJobsConversationConversationMessageResponseDefault & {
+  (
+    | simulateApiHarnessJobsConversationConversationMessageResponse409
+    | simulateApiHarnessJobsConversationConversationMessageResponseDefault
+  ) & {
     headers: Headers;
   };
 

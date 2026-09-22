@@ -33,6 +33,7 @@ from simulate.services.harness_credentials import (
     store_credential_file,
 )
 from simulate.services.harness_provider import get_harness_provider
+from tfc.utils.api_serializers import ApiTextErrorResponseSerializer
 from tfc.utils.api_contracts import validated_request
 
 
@@ -288,7 +289,10 @@ class HarnessJobViewSet(viewsets.ViewSet):
 
     @validated_request(
         request_serializer=HarnessConversationMessageCreateSerializer,
-        responses={202: HarnessConversationReadSerializer},
+        responses={
+            202: HarnessConversationReadSerializer,
+            409: ApiTextErrorResponseSerializer,
+        },
         reject_unknown_fields=True,
     )
     @action(detail=True, methods=["post"], url_path=r"conversation/messages")

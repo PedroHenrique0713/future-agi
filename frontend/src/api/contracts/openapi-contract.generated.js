@@ -27892,6 +27892,9 @@ export const OPENAPI_CONTRACT = Object.freeze({
           202: {
             $ref: "#/definitions/HarnessConversationRead",
           },
+          409: {
+            $ref: "#/definitions/ApiTextErrorResponse",
+          },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
