@@ -1820,7 +1820,9 @@ class HostedHarnessGateway:
                 endpoint_base_url=endpoint_base_url,
                 provider_ref=str(sandbox.id),
                 attempt=attempt,
-                ttl_seconds=_execution_ttl_seconds(payload["runtime"], self.client.name),
+                ttl_seconds=_execution_ttl_seconds(
+                    payload["runtime"], self.client.name
+                ),
                 control_only=True,
                 runtime_name=self.client.runtime_name,
                 runtime_digest=self.client.runtime_digest,
@@ -2146,16 +2148,13 @@ class HostedHarnessGateway:
                 suppress_input_echo=True,
             ),
         )
-        sandbox.fs.upload_file(
-            str(command.cmd_id).encode(), _CHAT_COMMAND_ID_FILE
-        )
+        sandbox.fs.upload_file(str(command.cmd_id).encode(), _CHAT_COMMAND_ID_FILE)
         capability.lease.state = HostedHarnessConversationLease.State.ACTIVE
         capability.lease.heartbeat_at = timezone.now()
         capability.lease.save(update_fields=["state", "heartbeat_at", "updated_at"])
         conversation.state = HostedHarnessConversation.State.WARM_IDLE
         conversation.save(update_fields=["state", "updated_at"])
         return capability.lease
-
 
     def ensure_conversation_runtime(
         self,
@@ -2183,82 +2182,84 @@ class HostedHarnessGateway:
             .first()
         )
         if active_attempt is not None and job.state not in terminal_states:
-            stale_lease = (
-                HostedHarnessConversationLease.no_workspace_objects.filter(
+            with transaction.atomic():
+                conversation = HostedHarnessConversation.no_workspace_objects.select_for_update().get(
+                    id=conversation.id
+                )
+                stale_lease = (
+                    HostedHarnessConversationLease.no_workspace_objects.filter(
+                        conversation=conversation,
+                        state__in=(
+                            HostedHarnessConversationLease.State.STARTING,
+                            HostedHarnessConversationLease.State.ACTIVE,
+                        ),
+                    )
+                    .exclude(provider_ref=active_attempt.provider_ref)
+                    .first()
+                )
+                if stale_lease is not None:
+                    if not stale_lease.provider_ref.startswith("pending:"):
+                        try:
+                            stale_sandbox = self.client.get(
+                                stale_lease.provider_ref,
+                                request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
+                            )
+                            self.client.delete(stale_sandbox, timeout=120, wait=True)
+                        except SandboxNotFoundError:
+                            pass
+                    stale_lease.state = HostedHarnessConversationLease.State.EXPIRED
+                    stale_lease.save(update_fields=["state", "updated_at"])
+                lease = HostedHarnessConversationLease.no_workspace_objects.filter(
                     conversation=conversation,
+                    provider_ref=active_attempt.provider_ref,
                     state__in=(
                         HostedHarnessConversationLease.State.STARTING,
                         HostedHarnessConversationLease.State.ACTIVE,
                     ),
-                )
-                .exclude(provider_ref=active_attempt.provider_ref)
-                .first()
-            )
-            if stale_lease is not None:
-                if not stale_lease.provider_ref.startswith("pending:"):
-                    try:
-                        stale_sandbox = self.client.get(
-                            stale_lease.provider_ref,
+                    expires_at__gt=timezone.now() + timedelta(seconds=60),
+                ).first()
+                if lease is not None:
+                    if lease.state == HostedHarnessConversationLease.State.ACTIVE:
+                        sandbox = self.client.get(
+                            str(active_attempt.provider_ref),
                             request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
                         )
-                        self.client.delete(stale_sandbox, timeout=120, wait=True)
-                    except SandboxNotFoundError:
-                        pass
-                stale_lease.state = HostedHarnessConversationLease.State.EXPIRED
-                stale_lease.save(update_fields=["state", "updated_at"])
-            lease = HostedHarnessConversationLease.no_workspace_objects.filter(
-                conversation=conversation,
-                provider_ref=active_attempt.provider_ref,
-                state__in=(
-                    HostedHarnessConversationLease.State.STARTING,
-                    HostedHarnessConversationLease.State.ACTIVE,
-                ),
-                expires_at__gt=timezone.now() + timedelta(seconds=60),
-            ).first()
-            if lease is not None:
-                if lease.state == HostedHarnessConversationLease.State.ACTIVE:
+                        command_id = (
+                            sandbox.fs.download_file(
+                                _CHAT_COMMAND_ID_FILE,
+                                _PROVIDER_POLL_TIMEOUT_SECONDS,
+                            )
+                            .decode()
+                            .strip()
+                        )
+                        command = sandbox.process.get_session_command(
+                            _CHAT_SESSION,
+                            command_id,
+                            request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
+                        )
+                        if command.exit_code is None:
+                            return lease
+                    lease.state = HostedHarnessConversationLease.State.EXPIRED
+                    lease.save(update_fields=["state", "updated_at"])
+                try:
                     sandbox = self.client.get(
                         str(active_attempt.provider_ref),
                         request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
                     )
-                    command_id = sandbox.fs.download_file(
-                        _CHAT_COMMAND_ID_FILE,
-                        _PROVIDER_POLL_TIMEOUT_SECONDS,
-                    ).decode().strip()
-                    command = sandbox.process.get_session_command(
-                        _CHAT_SESSION,
-                        command_id,
-                        request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
+                    return self._start_chat_in_sandbox(
+                        job=job,
+                        conversation=conversation,
+                        attempt=active_attempt,
+                        sandbox=sandbox,
+                        endpoint_base_url=endpoint_base_url,
                     )
-                    if command.exit_code is None:
-                        return lease
-                if (
-                    lease.state == HostedHarnessConversationLease.State.STARTING
-                    and lease.heartbeat_at
-                    and timezone.now() - lease.heartbeat_at < timedelta(seconds=30)
-                ):
-                    return lease
-                lease.state = HostedHarnessConversationLease.State.EXPIRED
-                lease.save(update_fields=["state", "updated_at"])
-            try:
-                sandbox = self.client.get(
-                    str(active_attempt.provider_ref),
-                    request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
-                )
-                return self._start_chat_in_sandbox(
-                    job=job,
-                    conversation=conversation,
-                    attempt=active_attempt,
-                    sandbox=sandbox,
-                    endpoint_base_url=endpoint_base_url,
-                )
-            except SandboxNotFoundError as exc:
-                raise HostedHarnessError(
-                    "conversation_runtime_not_ready",
-                    "the active hosted ALK sandbox is no longer available",
-                    status_code=409,
-                    retryable=True,
-                ) from exc
+                except SandboxNotFoundError as exc:
+                    raise HostedHarnessError(
+                        "conversation_runtime_not_ready",
+                        "the active hosted ALK sandbox is no longer available",
+                        status_code=409,
+                        retryable=True,
+                    ) from exc
 
         lease = HostedHarnessConversationLease.no_workspace_objects.filter(
             conversation=conversation,
@@ -3311,22 +3312,19 @@ class HostedHarnessGateway:
 
     def _cleanup_conversation_runtime(self, job: HostedHarnessJob) -> None:
         """Delete the control-only chat sandbox after the execution becomes terminal."""
-        conversation = (
-            HostedHarnessConversation.no_workspace_objects.filter(job=job).first()
-        )
+        conversation = HostedHarnessConversation.no_workspace_objects.filter(
+            job=job
+        ).first()
         if conversation is None:
             return
-        lease = (
-            HostedHarnessConversationLease.no_workspace_objects.filter(
-                conversation=conversation,
-                control_only=True,
-                state__in=(
-                    HostedHarnessConversationLease.State.STARTING,
-                    HostedHarnessConversationLease.State.ACTIVE,
-                ),
-            )
-            .first()
-        )
+        lease = HostedHarnessConversationLease.no_workspace_objects.filter(
+            conversation=conversation,
+            control_only=True,
+            state__in=(
+                HostedHarnessConversationLease.State.STARTING,
+                HostedHarnessConversationLease.State.ACTIVE,
+            ),
+        ).first()
         if lease is None:
             return
         provider_ref = str(lease.provider_ref or "")

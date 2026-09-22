@@ -1413,13 +1413,15 @@ class TestExecutionCancelView(APIView):
         Tries the native TestExecutionWorkflow, hosted
         SimulationRunnerWorkflow, and any active RerunCoordinatorWorkflow.
         """
+        from simulate.models import HostedHarnessJob
+        from simulate.services.hosted_harness import request_cancellation
         from simulate.temporal.client import (
+            cancel_hosted_harness_gateway_workflow,
             cancel_simulation_runner_workflow,
             cancel_test_execution,
             cancel_workflow,
         )
-        from simulate.models import HostedHarnessJob
-        from simulate.services.hosted_harness import request_cancellation
+
         test_execution_id = str(test_execution.id)
 
         hosted_job = HostedHarnessJob.no_workspace_objects.filter(
@@ -1445,7 +1447,6 @@ class TestExecutionCancelView(APIView):
                 "message": "Cancellation signal sent to hosted simulation",
                 "test_execution_id": test_execution_id,
             }
-
 
         any_cancelled = False
 
@@ -6915,7 +6916,6 @@ class CallExecutionRerunView(APIView):
             is_hosted = _hosted_execution_eligible(
                 test_execution.run_test, test_execution
             )
-
 
             repository_job_id = _repository_harness_job_id(test_execution)
 

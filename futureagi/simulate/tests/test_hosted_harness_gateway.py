@@ -1878,3 +1878,93 @@ def test_reconcile_exit0_refreshes_terminal_delivery_flags(organization, monkeyp
     assert refreshed.manifest_acked is True
     assert refreshed.terminal_stage == "completed"
     assert refreshed.terminal_failure is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_fresh_lease_starts_chat_once_for_concurrent_messages(
+    organization, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from django.db import close_old_connections
+
+    from simulate.services.hosted_harness_conversation import (
+        ensure_conversation,
+        issue_conversation_capability,
+    )
+    from simulate.services.hosted_harness_gateway import _CHAT_SESSION
+
+    job, _ = create_hosted_job(organization, _payload(), idempotency_key="fresh-chat")
+    attempt = register_attempt(
+        job.id, endpoint_base_url="https://platform.example"
+    ).attempt
+    attempt.provider_ref = "sandbox-1"
+    attempt.state = HostedHarnessAttempt.State.RUNNING
+    attempt.save()
+    job.refresh_from_db()
+    conversation = ensure_conversation(job)
+    issue_conversation_capability(
+        conversation,
+        endpoint_base_url="https://platform.example",
+        provider_ref=attempt.provider_ref,
+        attempt=attempt,
+        ttl_seconds=600,
+        control_only=True,
+    )
+    client = _Daytona()
+    gateway = object.__new__(HostedHarnessGateway)
+    gateway.client = client
+    monkeypatch.setattr(
+        "simulate.services.hosted_harness_gateway._platform_simulator_material",
+        lambda: ({}, None),
+    )
+    barrier = Barrier(2)
+
+    def start():
+        close_old_connections()
+        try:
+            barrier.wait(timeout=10)
+            return gateway.ensure_conversation_runtime(
+                job,
+                conversation=conversation,
+                endpoint_base_url="https://platform.example",
+            ).state
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(start) for _ in range(2)]
+        assert [future.result(timeout=30) for future in futures] == ["active", "active"]
+    assert client.sandbox.process.sessions == [_CHAT_SESSION]
+    assert "hosted_chat_entrypoint" in client.sandbox.process.session_request.command
+    assert client.deleted is False
+
+
+@pytest.mark.django_db
+def test_hosted_execution_cancel_signals_workflow_without_deleting_sandbox(
+    organization, monkeypatch
+):
+    from simulate.models import RunTest, TestExecution
+    from simulate.views.run_test import TestExecutionCancelView
+
+    run = RunTest.objects.create(name="Cancel hosted run", organization=organization)
+    execution = TestExecution.objects.create(run_test=run)
+    job, _ = create_hosted_job(
+        organization, _payload(), idempotency_key="cancel-workflow"
+    )
+    job.test_execution = execution
+    job.save(update_fields=["test_execution"])
+    signaled = []
+    monkeypatch.setattr(
+        "simulate.temporal.client.cancel_hosted_harness_gateway_workflow",
+        lambda job_id: signaled.append(job_id),
+    )
+    with patch.object(HostedHarnessGateway, "cancel") as delete_fallback:
+        result = TestExecutionCancelView()._cancel_with_temporal(execution)
+    assert result["success"] is True
+    assert signaled == [str(job.id)]
+    delete_fallback.assert_not_called()
+    job.refresh_from_db()
+    assert job.state == HostedHarnessJob.State.CLEANING_UP
+    assert job.cancel_reason == "user_canceled"

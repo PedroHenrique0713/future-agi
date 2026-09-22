@@ -655,6 +655,7 @@ class HostedHarnessProvider:
                 )
         job.refresh_from_db()
         return Response(serialize_job(job))
+
     def adjust(self, request, pk) -> Response:
         from simulate.services.hosted_harness import HostedHarnessError
         from simulate.services.hosted_harness_gateway import HostedHarnessGateway
@@ -670,7 +671,6 @@ class HostedHarnessProvider:
         except HostedHarnessError as exc:
             return Response(exc.as_dict(), status=exc.status_code)
         return Response(serialize_job(job))
-
 
     def send_message(self, request, pk) -> Response:
         from simulate.services.hosted_harness import HostedHarnessError
@@ -694,9 +694,11 @@ class HostedHarnessProvider:
             HostedHarnessJob.State.CANCELED,
         }
         if job.state in terminal_states:
-            conversation = HostedHarnessConversation.no_workspace_objects.filter(
-                job=job
-            ).only("latest_workspace_object_key").first()
+            conversation = (
+                HostedHarnessConversation.no_workspace_objects.filter(job=job)
+                .only("latest_workspace_object_key")
+                .first()
+            )
             metadata = (job.payload or {}).get("metadata") or {}
             has_archive = bool(
                 metadata.get("authoring_object_key")
@@ -1242,6 +1244,21 @@ class SandboxHarnessProvider:
 
         try:
             return Response(self._client().cancel(str(pk)))
+        except HarnessSandboxRejected as exc:
+            return Response({"detail": str(exc)}, status=exc.status_code)
+        except HarnessSandboxUnavailable as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+    def adjust(self, request, pk) -> Response:
+        from simulate.services.harness_sandbox import (
+            HarnessSandboxRejected,
+            HarnessSandboxUnavailable,
+        )
+
+        try:
+            return Response(self._client().adjust(str(pk), request.validated_data))
         except HarnessSandboxRejected as exc:
             return Response({"detail": str(exc)}, status=exc.status_code)
         except HarnessSandboxUnavailable as exc:

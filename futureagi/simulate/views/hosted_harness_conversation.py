@@ -34,6 +34,7 @@ from simulate.services.hosted_harness_conversation import (
     store_workspace_archive,
 )
 from tfc.utils.api_contracts import validated_request
+from tfc.utils.api_errors import build_error_envelope
 
 
 class HostedHarnessConversationViewSet(viewsets.ViewSet):
@@ -45,11 +46,11 @@ class HostedHarnessConversationViewSet(viewsets.ViewSet):
             return Response(exc.as_dict(), status=exc.status_code)
         if isinstance(exc, ValidationError):
             return Response(
-                {
-                    "error": "validation_error",
-                    "message": str(exc.detail),
-                    "retryable": False,
-                },
+                build_error_envelope(
+                    exc.detail,
+                    code="validation_error",
+                    extra={"error": "validation_error", "retryable": False},
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().handle_exception(exc)

@@ -284,6 +284,10 @@ def test_conversation_agent_can_request_active_run_adjustment(
     from simulate.services.hosted_harness_gateway import HostedHarnessGateway
 
     monkeypatch.setattr(HostedHarnessGateway, "adjust", adjust)
+    monkeypatch.setattr(
+        "simulate.services.hosted_harness_gateway.get_sandbox_provider",
+        lambda: SimpleNamespace(name="test-provider"),
+    )
     response = APIClient().post(
         f"{BASE}/{job.conversation.id}/adjust/",
         {
