@@ -1165,12 +1165,11 @@ class SandboxHarnessProvider:
 
     def extend(self, request, pk) -> Response:
         return Response(
-            {
-                "error": "extend_not_supported",
-                "message": (
-                    "adding scenarios is only available on the hosted (daytona) provider"
-                ),
-            },
+            build_error_envelope(
+                "adding scenarios is only available on the hosted (daytona) provider",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="extend_not_supported",
+            ),
             status=status.HTTP_400_BAD_REQUEST,
         )
 
