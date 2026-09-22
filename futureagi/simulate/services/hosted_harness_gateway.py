@@ -3293,6 +3293,63 @@ class HostedHarnessGateway:
             )
         return self._delete_and_record(attempt, retry_pending=retry_pending)
 
+    def _cleanup_conversation_runtime(self, job: HostedHarnessJob) -> None:
+        """Delete the control-only chat sandbox after the execution becomes terminal."""
+        conversation = (
+            HostedHarnessConversation.no_workspace_objects.filter(job=job).first()
+        )
+        if conversation is None:
+            return
+        lease = (
+            HostedHarnessConversationLease.no_workspace_objects.filter(
+                conversation=conversation,
+                control_only=True,
+                state__in=(
+                    HostedHarnessConversationLease.State.STARTING,
+                    HostedHarnessConversationLease.State.ACTIVE,
+                ),
+            )
+            .first()
+        )
+        if lease is None:
+            return
+        provider_ref = str(lease.provider_ref or "")
+        absent = not provider_ref or provider_ref.startswith("pending:")
+        if not absent:
+            try:
+                sandbox = self.client.get(
+                    provider_ref,
+                    request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
+                )
+            except SandboxNotFoundError:
+                absent = True
+            except Exception:
+                logger.exception(
+                    "conversation sandbox cleanup deferred conversation=%s",
+                    conversation.id,
+                )
+                return
+            else:
+                try:
+                    absent = self.client.delete(sandbox, timeout=120, wait=True)
+                    if not absent:
+                        try:
+                            self.client.get(
+                                provider_ref,
+                                request_timeout=_PROVIDER_POLL_TIMEOUT_SECONDS,
+                            )
+                        except SandboxNotFoundError:
+                            absent = True
+                except Exception:
+                    logger.exception(
+                        "conversation sandbox deletion failed conversation=%s",
+                        conversation.id,
+                    )
+                    return
+        if absent:
+            lease.state = HostedHarnessConversationLease.State.EXPIRED
+            lease.save(update_fields=["state", "updated_at"])
+
     def _delete_and_record(
         self, attempt: HostedHarnessAttempt, *, retry_pending: bool = False
     ) -> HostedHarnessJob:
@@ -3321,7 +3378,7 @@ class HostedHarnessGateway:
                     )
                 except SandboxNotFoundError:
                     absent = True
-        return record_cleanup(
+        job = record_cleanup(
             attempt.id,
             provider_ref=str(attempt.provider_ref),
             verified_absent=absent,
@@ -3331,6 +3388,8 @@ class HostedHarnessGateway:
                 "deleted_at": timezone.now().isoformat(),
             },
         )
+        self._cleanup_conversation_runtime(job)
+        return job
 
 
 def _empty_source_archive() -> bytes:
