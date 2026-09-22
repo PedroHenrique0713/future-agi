@@ -584,6 +584,8 @@ import type {
   HarnessSecretFileUploadResponseApi,
   HarnessSecretValuesApi,
   HarnessSourceUploadResponseApi,
+  HarnessUsageRequestApi,
+  HarnessUsageResponseApi,
   HealthCheckResponseApi,
   HeartbeatApi,
   HuggingFaceAddRowsRequestApi,
@@ -59044,6 +59046,56 @@ export const simulateApiHarnessAttemptsScenarios = async (
   );
 };
 
+export type simulateApiHarnessAttemptsUsageResponse200 = {
+  data: HarnessUsageResponseApi;
+  status: 200;
+};
+
+export type simulateApiHarnessAttemptsUsageResponse402 = {
+  data: HarnessUsageResponseApi;
+  status: 402;
+};
+
+export type simulateApiHarnessAttemptsUsageResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 200 | 402>;
+};
+
+export type simulateApiHarnessAttemptsUsageResponseSuccess =
+  simulateApiHarnessAttemptsUsageResponse200 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessAttemptsUsageResponseError = (
+  | simulateApiHarnessAttemptsUsageResponse402
+  | simulateApiHarnessAttemptsUsageResponseDefault
+) & {
+  headers: Headers;
+};
+
+export type simulateApiHarnessAttemptsUsageResponse =
+  | simulateApiHarnessAttemptsUsageResponseSuccess
+  | simulateApiHarnessAttemptsUsageResponseError;
+
+export const getSimulateApiHarnessAttemptsUsageUrl = (id: string) => {
+  return `/simulate/api/harness/attempts/${id}/usage/`;
+};
+
+export const simulateApiHarnessAttemptsUsage = async (
+  id: string,
+  harnessUsageRequestApi: HarnessUsageRequestApi,
+  options?: RequestInit,
+): Promise<simulateApiHarnessAttemptsUsageResponse> => {
+  return apiMutator<simulateApiHarnessAttemptsUsageResponse>(
+    getSimulateApiHarnessAttemptsUsageUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(harnessUsageRequestApi),
+    },
+  );
+};
+
 export type simulateApiHarnessConversationsAdjustResponse200 = {
   data: HarnessConversationAdjustmentResponseApi;
   status: 200;
@@ -59417,6 +59469,241 @@ export const simulateApiHarnessConversationsWorkspace = async (
     {
       ...options,
       method: "PUT",
+    },
+  );
+};
+
+export type simulateApiHarnessIngressReadResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type simulateApiHarnessIngressReadResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 200>;
+};
+
+export type simulateApiHarnessIngressReadResponseSuccess =
+  simulateApiHarnessIngressReadResponse200 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessIngressReadResponseError =
+  simulateApiHarnessIngressReadResponseDefault & {
+    headers: Headers;
+  };
+
+export type simulateApiHarnessIngressReadResponse =
+  | simulateApiHarnessIngressReadResponseSuccess
+  | simulateApiHarnessIngressReadResponseError;
+
+export const getSimulateApiHarnessIngressReadUrl = (
+  token: string,
+  targetPath: string,
+) => {
+  return `/simulate/api/harness/ingress/${token}/${targetPath}`;
+};
+
+/**
+ * Relay a signed callback URL to the active sandbox without exposing provider headers.
+ */
+export const simulateApiHarnessIngressRead = async (
+  token: string,
+  targetPath: string,
+  options?: RequestInit,
+): Promise<simulateApiHarnessIngressReadResponse> => {
+  return apiMutator<simulateApiHarnessIngressReadResponse>(
+    getSimulateApiHarnessIngressReadUrl(token, targetPath),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export type simulateApiHarnessIngressCreateResponse201 = {
+  data: void;
+  status: 201;
+};
+
+export type simulateApiHarnessIngressCreateResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 201>;
+};
+
+export type simulateApiHarnessIngressCreateResponseSuccess =
+  simulateApiHarnessIngressCreateResponse201 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessIngressCreateResponseError =
+  simulateApiHarnessIngressCreateResponseDefault & {
+    headers: Headers;
+  };
+
+export type simulateApiHarnessIngressCreateResponse =
+  | simulateApiHarnessIngressCreateResponseSuccess
+  | simulateApiHarnessIngressCreateResponseError;
+
+export const getSimulateApiHarnessIngressCreateUrl = (
+  token: string,
+  targetPath: string,
+) => {
+  return `/simulate/api/harness/ingress/${token}/${targetPath}`;
+};
+
+/**
+ * Relay a signed callback URL to the active sandbox without exposing provider headers.
+ */
+export const simulateApiHarnessIngressCreate = async (
+  token: string,
+  targetPath: string,
+  options?: RequestInit,
+): Promise<simulateApiHarnessIngressCreateResponse> => {
+  return apiMutator<simulateApiHarnessIngressCreateResponse>(
+    getSimulateApiHarnessIngressCreateUrl(token, targetPath),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export type simulateApiHarnessIngressUpdateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type simulateApiHarnessIngressUpdateResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 200>;
+};
+
+export type simulateApiHarnessIngressUpdateResponseSuccess =
+  simulateApiHarnessIngressUpdateResponse200 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessIngressUpdateResponseError =
+  simulateApiHarnessIngressUpdateResponseDefault & {
+    headers: Headers;
+  };
+
+export type simulateApiHarnessIngressUpdateResponse =
+  | simulateApiHarnessIngressUpdateResponseSuccess
+  | simulateApiHarnessIngressUpdateResponseError;
+
+export const getSimulateApiHarnessIngressUpdateUrl = (
+  token: string,
+  targetPath: string,
+) => {
+  return `/simulate/api/harness/ingress/${token}/${targetPath}`;
+};
+
+/**
+ * Relay a signed callback URL to the active sandbox without exposing provider headers.
+ */
+export const simulateApiHarnessIngressUpdate = async (
+  token: string,
+  targetPath: string,
+  options?: RequestInit,
+): Promise<simulateApiHarnessIngressUpdateResponse> => {
+  return apiMutator<simulateApiHarnessIngressUpdateResponse>(
+    getSimulateApiHarnessIngressUpdateUrl(token, targetPath),
+    {
+      ...options,
+      method: "PUT",
+    },
+  );
+};
+
+export type simulateApiHarnessIngressPartialUpdateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type simulateApiHarnessIngressPartialUpdateResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 200>;
+};
+
+export type simulateApiHarnessIngressPartialUpdateResponseSuccess =
+  simulateApiHarnessIngressPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessIngressPartialUpdateResponseError =
+  simulateApiHarnessIngressPartialUpdateResponseDefault & {
+    headers: Headers;
+  };
+
+export type simulateApiHarnessIngressPartialUpdateResponse =
+  | simulateApiHarnessIngressPartialUpdateResponseSuccess
+  | simulateApiHarnessIngressPartialUpdateResponseError;
+
+export const getSimulateApiHarnessIngressPartialUpdateUrl = (
+  token: string,
+  targetPath: string,
+) => {
+  return `/simulate/api/harness/ingress/${token}/${targetPath}`;
+};
+
+/**
+ * Relay a signed callback URL to the active sandbox without exposing provider headers.
+ */
+export const simulateApiHarnessIngressPartialUpdate = async (
+  token: string,
+  targetPath: string,
+  options?: RequestInit,
+): Promise<simulateApiHarnessIngressPartialUpdateResponse> => {
+  return apiMutator<simulateApiHarnessIngressPartialUpdateResponse>(
+    getSimulateApiHarnessIngressPartialUpdateUrl(token, targetPath),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export type simulateApiHarnessIngressDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type simulateApiHarnessIngressDeleteResponseDefault = {
+  data: ManagementAPIErrorResponseApi;
+  status: Exclude<HTTPStatusCodes, 204>;
+};
+
+export type simulateApiHarnessIngressDeleteResponseSuccess =
+  simulateApiHarnessIngressDeleteResponse204 & {
+    headers: Headers;
+  };
+export type simulateApiHarnessIngressDeleteResponseError =
+  simulateApiHarnessIngressDeleteResponseDefault & {
+    headers: Headers;
+  };
+
+export type simulateApiHarnessIngressDeleteResponse =
+  | simulateApiHarnessIngressDeleteResponseSuccess
+  | simulateApiHarnessIngressDeleteResponseError;
+
+export const getSimulateApiHarnessIngressDeleteUrl = (
+  token: string,
+  targetPath: string,
+) => {
+  return `/simulate/api/harness/ingress/${token}/${targetPath}`;
+};
+
+/**
+ * Relay a signed callback URL to the active sandbox without exposing provider headers.
+ */
+export const simulateApiHarnessIngressDelete = async (
+  token: string,
+  targetPath: string,
+  options?: RequestInit,
+): Promise<simulateApiHarnessIngressDeleteResponse> => {
+  return apiMutator<simulateApiHarnessIngressDeleteResponse>(
+    getSimulateApiHarnessIngressDeleteUrl(token, targetPath),
+    {
+      ...options,
+      method: "DELETE",
     },
   );
 };

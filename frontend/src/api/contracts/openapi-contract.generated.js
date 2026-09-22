@@ -5,7 +5,7 @@
 export const OPENAPI_CONTRACT = Object.freeze({
   generatedFrom: "api_contracts/openapi/swagger.json",
   swaggerVersion: "2.0",
-  endpointCount: 1014,
+  endpointCount: 1017,
   endpoints: {
     "/accounts/2fa/recovery-codes/": {
       get: {
@@ -28039,6 +28039,28 @@ export const OPENAPI_CONTRACT = Object.freeze({
         },
       },
     },
+    "/simulate/api/harness/attempts/{id}/usage/": {
+      post: {
+        operationId: "simulate_api_harness_attempts_usage",
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessUsageRequest",
+        },
+        queryParameters: {},
+        responses: {
+          200: {
+            $ref: "#/definitions/HarnessUsageResponse",
+          },
+          402: {
+            $ref: "#/definitions/HarnessUsageResponse",
+          },
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
     "/simulate/api/harness/conversations/{id}/adjust/": {
       post: {
         operationId: "simulate_api_harness_conversations_adjust",
@@ -28209,6 +28231,130 @@ export const OPENAPI_CONTRACT = Object.freeze({
           200: {
             $ref: "#/definitions/HarnessConversationWorkspaceResponse",
           },
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
+    "/simulate/api/harness/ingress/{token}/": {
+      get: {
+        operationId: "simulate_api_harness_ingress_read",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      post: {
+        operationId: "simulate_api_harness_ingress_create",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      put: {
+        operationId: "simulate_api_harness_ingress_update",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      patch: {
+        operationId: "simulate_api_harness_ingress_partial_update",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      delete: {
+        operationId: "simulate_api_harness_ingress_delete",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
+    "/simulate/api/harness/ingress/{token}/{target_path}": {
+      get: {
+        operationId: "simulate_api_harness_ingress_read",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      post: {
+        operationId: "simulate_api_harness_ingress_create",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      put: {
+        operationId: "simulate_api_harness_ingress_update",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      patch: {
+        operationId: "simulate_api_harness_ingress_partial_update",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+      delete: {
+        operationId: "simulate_api_harness_ingress_delete",
+        runtimeRequestValidation: false,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {},
+        responses: {
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
           },
@@ -45272,7 +45418,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
           "x-nullable": true,
         },
@@ -45426,7 +45572,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
           "x-nullable": true,
         },
@@ -46417,7 +46563,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
         },
         commit_message: {
@@ -59960,6 +60106,14 @@ export const OPENAPI_CONTRACT = Object.freeze({
         conversation: {
           $ref: "#/definitions/HarnessConversationRead",
         },
+        consumption: {
+          $ref: "#/definitions/HarnessConsumption",
+        },
+        usage_limit: {
+          title: "Usage limit",
+          type: "object",
+          "x-nullable": true,
+        },
       },
     },
     HarnessManifest: {
@@ -60310,6 +60464,71 @@ export const OPENAPI_CONTRACT = Object.freeze({
         total_bytes: {
           title: "Total bytes",
           type: "integer",
+        },
+      },
+    },
+    HarnessUsageRequest: {
+      required: ["operation"],
+      type: "object",
+      properties: {
+        operation: {
+          title: "Operation",
+          type: "string",
+          enum: ["check", "report"],
+        },
+        action: {
+          title: "Action",
+          type: "string",
+          enum: ["text_call", "voice_call"],
+        },
+        schema_version: {
+          title: "Schema version",
+          type: "string",
+          enum: ["futureagi.harness-usage.v1"],
+        },
+        records: {
+          type: "array",
+          items: {
+            $ref: "#/definitions/HarnessUsageRecord",
+          },
+        },
+      },
+    },
+    HarnessUsageResponse: {
+      type: "object",
+      properties: {
+        allowed: {
+          title: "Allowed",
+          type: "boolean",
+        },
+        accepted: {
+          title: "Accepted",
+          type: "boolean",
+        },
+        reason: {
+          title: "Reason",
+          type: "string",
+        },
+        error_code: {
+          title: "Error code",
+          type: "string",
+        },
+        dimension: {
+          title: "Dimension",
+          type: "string",
+        },
+        current_usage: {
+          title: "Current usage",
+          type: "number",
+        },
+        limit: {
+          title: "Limit",
+          type: "number",
+        },
+        upgrade_cta: {
+          title: "Upgrade cta",
+          type: "object",
+          "x-nullable": true,
         },
       },
     },
@@ -87079,6 +87298,39 @@ export const OPENAPI_CONTRACT = Object.freeze({
         },
       },
     },
+    HarnessConsumption: {
+      required: [
+        "text_sim_tokens",
+        "voice_sim_minutes",
+        "ai_credits",
+        "sandbox_seconds",
+      ],
+      type: "object",
+      properties: {
+        text_sim_tokens: {
+          title: "Text sim tokens",
+          type: "integer",
+          minimum: 0,
+        },
+        voice_sim_minutes: {
+          title: "Voice sim minutes",
+          type: "number",
+          minimum: 0,
+        },
+        ai_credits: {
+          title: "Ai credits",
+          type: "number",
+          minimum: 0,
+          "x-nullable": true,
+        },
+        sandbox_seconds: {
+          title: "Sandbox seconds",
+          type: "number",
+          minimum: 0,
+        },
+      },
+      "x-nullable": true,
+    },
     HarnessJobEvent: {
       required: [
         "event_id",
@@ -87563,6 +87815,71 @@ export const OPENAPI_CONTRACT = Object.freeze({
           title: "Purpose",
           type: "string",
           enum: ["target_provider", "simulator_provider", "source_checkout"],
+        },
+      },
+    },
+    HarnessUsageRecord: {
+      required: [
+        "id",
+        "action",
+        "scenario_key",
+        "amount",
+        "occurred_at",
+        "funding",
+      ],
+      type: "object",
+      properties: {
+        id: {
+          title: "Id",
+          type: "string",
+          format: "uuid",
+        },
+        action: {
+          title: "Action",
+          type: "string",
+          enum: ["text_call", "voice_call"],
+        },
+        scenario_key: {
+          title: "Scenario key",
+          type: "string",
+          maxLength: 255,
+          minLength: 1,
+        },
+        amount: {
+          title: "Amount",
+          type: "number",
+          minimum: 0,
+        },
+        occurred_at: {
+          title: "Occurred at",
+          type: "string",
+          format: "date-time",
+        },
+        funding: {
+          title: "Funding",
+          type: "string",
+          enum: ["platform", "customer"],
+        },
+        outcome: {
+          title: "Outcome",
+          type: "string",
+          enum: ["completed", "failed"],
+          default: "completed",
+        },
+        failure_domain: {
+          title: "Failure domain",
+          type: "string",
+          enum: [
+            "agent",
+            "simulator",
+            "environment",
+            "connectivity",
+            "infrastructure",
+            "grading",
+            "artifact",
+            "platform_sync",
+          ],
+          "x-nullable": true,
         },
       },
     },
