@@ -5,7 +5,7 @@
 export const OPENAPI_CONTRACT = Object.freeze({
   generatedFrom: "api_contracts/openapi/swagger.json",
   swaggerVersion: "2.0",
-  endpointCount: 1010,
+  endpointCount: 1011,
   endpoints: {
     "/accounts/2fa/recovery-codes/": {
       get: {
