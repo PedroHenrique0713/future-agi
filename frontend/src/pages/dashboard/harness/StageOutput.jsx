@@ -253,6 +253,7 @@ export default function StageOutput({ output }) {
 
 StageOutput.propTypes = {
   output: PropTypes.shape({
+    data: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
     events: PropTypes.arrayOf(PropTypes.object),
     kind: PropTypes.string.isRequired,
     summary: PropTypes.string,

@@ -203,8 +203,16 @@ def _platform_simulator_material() -> tuple[dict[str, str], bytes | None]:
     model = str(os.environ.get("SIMULATOR_LLM_MODEL") or "gemini-3.7-flash").strip()
     location = str(os.environ.get("GOOGLE_CLOUD_LOCATION") or "global").strip()
     backend = str(os.environ.get("ALK_HARNESS") or "claude").strip()
-    agentcc_url = str(os.environ.get("ALK_HOSTED_AGENTCC_BASE_URL") or "").strip()
-    agentcc_key = str(os.environ.get("AGENTCC_INTERNAL_API_KEY") or "").strip()
+    agentcc_url = str(
+        os.environ.get("ALK_HOSTED_AGENTCC_BASE_URL")
+        or os.environ.get("AGENTCC_BASE_URL")
+        or ""
+    ).strip()
+    agentcc_key = str(
+        os.environ.get("AGENTCC_HARNESS_API_KEY")
+        or os.environ.get("AGENTCC_INTERNAL_API_KEY")
+        or ""
+    ).strip()
     agentcc_model = str(
         os.environ.get("ALK_HOSTED_AGENTCC_MODEL") or "vertex_ai/gemini-3.7-flash"
     ).strip()
@@ -222,13 +230,13 @@ def _platform_simulator_material() -> tuple[dict[str, str], bytes | None]:
     ).strip()
     if (
         backend.lower() in {"claude", "claude-code"}
-        and "gemini" in authoring_model.lower()
+        and ("gemini" in authoring_model.lower() or agentcc_url or agentcc_key)
         and not agentcc_ready
     ):
         raise HostedHarnessError(
             "authoring_gateway_not_configured",
-            "Gemini through Claude Agent SDK requires "
-            "ALK_HOSTED_AGENTCC_BASE_URL and AGENTCC_INTERNAL_API_KEY",
+            "Claude gateway authoring requires a sandbox-reachable AgentCC URL "
+            "and a platform-owned harness or internal API key",
             status_code=503,
         )
     claude_region = str(
@@ -251,6 +259,8 @@ def _platform_simulator_material() -> tuple[dict[str, str], bytes | None]:
     if agentcc_ready:
         values["ALK_CLAUDE_GATEWAY_URL"] = agentcc_url.rstrip("/")
         values["ALK_CLAUDE_GATEWAY_API_KEY"] = agentcc_key
+        values["AGENTCC_BASE_URL"] = agentcc_url.rstrip("/")
+        values["AGENTCC_API_KEY"] = agentcc_key
     for name in (
         "LIVEKIT_URL",
         "LIVEKIT_API_KEY",
@@ -1202,6 +1212,9 @@ def _resolved_egress_domains(
     values: list[str] = [domain for domain in base_domains if isinstance(domain, str)]
     values.extend(_provider_egress_domains(target_secrets))
     values.extend(_provider_egress_domains(simulator_env))
+    gateway_host = _hostname_from_url(simulator_env.get("AGENTCC_BASE_URL"))
+    if gateway_host:
+        values.append(gateway_host)
     # Observe, when the guest is given credentials for it. Derived rather than requested, because a
     # customer cannot be expected to know the collector is a dependency of their own run.
     simulator_values = {str(k).upper(): v for k, v in simulator_env.items()}
@@ -1469,6 +1482,9 @@ class HostedHarnessGateway:
             "us-east5-aiplatform.googleapis.com",
             "us-central1-aiplatform.googleapis.com",
         ]
+        gateway_host = _hostname_from_url(simulator_env.get("AGENTCC_BASE_URL"))
+        if gateway_host and gateway_host not in default_authoring_egress:
+            default_authoring_egress.insert(0, gateway_host)
         allowed_domains = list(
             dict.fromkeys(
                 getattr(
