@@ -23,6 +23,7 @@ import { Helmet } from "react-helmet-async";
 import { useNavigate, useParams } from "react-router-dom";
 
 import Iconify from "src/components/iconify";
+import { CreditExhaustionBanner } from "src/components/CreditExhaustionBanner";
 import StatusChip from "src/components/custom-status-chip/CustomStatusChip";
 import ScenarioOutcome from "./ScenarioOutcome";
 import CustomTooltip from "src/components/tooltip";
@@ -32,12 +33,15 @@ import ConfirmDialog from "src/components/custom-dialog/confirm-dialog";
 import EnvironmentSwitcher from "src/components/harness/EnvironmentSwitcher";
 import { compactActivityEvents } from "./activityEvents";
 import {
+  adjustHarnessJob,
   cancelHarnessJob,
+  extendHarnessJob,
   getHarnessJob,
   listHarnessJobs,
   sendHarnessConversationMessage,
 } from "src/api/harness/harness";
 import { paths } from "src/routes/paths";
+import { useCreditExhaustion } from "src/hooks/use-credit-exhaustion";
 
 import {
   adjustmentStatus,
@@ -127,21 +131,37 @@ const activityResultSummary = (entry) => {
     .find(Boolean)
     ?.slice(0, 180);
 };
+const consumptionValue = (value) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+    : "Unavailable";
 export default function HarnessDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const {
+    exhaustionError,
+    handleError: handleCreditError,
+    handleUpgradeClick,
+    handleDismiss: dismissCreditBanner,
+    clearError: clearCreditError,
+  } = useCreditExhaustion({ feature: "hosted_harness" });
   const [clock, setClock] = useState(Date.now());
   const [cancelError, setCancelError] = useState("");
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [conversationError, setConversationError] = useState("");
+  const [adjustError, setAdjustError] = useState("");
+  const [extendError, setExtendError] = useState("");
   const [stagesOpen, setStagesOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [detailTab, setDetailTab] = useState("contract");
   const [message, setMessage] = useState("");
+  const [adjustment, setAdjustment] = useState("");
+  const [addCount, setAddCount] = useState(3);
   const feedRef = useRef(null);
   const conversationRef = useRef(null);
   const conversationAtEnd = useRef(true);
+  const hadRemoteUsageLimit = useRef(false);
   // Whether the reader is sitting at the end of the feed. New activity follows the end
   // only while they are; someone who scrolled up to read history is left where they are.
   const pinnedToEnd = useRef(true);
@@ -173,6 +193,18 @@ export default function HarnessDetail() {
     },
     meta: { errorHandled: true },
   });
+  const usageLimit = current?.usage_limit;
+  useEffect(() => {
+    if (usageLimit) {
+      if (!hadRemoteUsageLimit.current) {
+        hadRemoteUsageLimit.current = true;
+        handleCreditError(usageLimit);
+      }
+    } else if (hadRemoteUsageLimit.current) {
+      hadRemoteUsageLimit.current = false;
+      clearCreditError();
+    }
+  }, [usageLimit, handleCreditError, clearCreditError]);
 
   // Shares the list page's key, so arriving from the list reuses what is already cached
   // rather than issuing a second request for the same array.
@@ -245,6 +277,76 @@ export default function HarnessDetail() {
     },
     onError: (requestError) => {
       setConversationError(errorMessage(requestError));
+    },
+  });
+
+  const { mutate: adjust, isPending: adjusting } = useMutation({
+    mutationFn: () => {
+      const instruction = adjustment.trim();
+      // client_request_id is optional; window.crypto.randomUUID is undefined on an
+      // insecure origin, so the key is omitted rather than sent as undefined.
+      const requestId = window.crypto?.randomUUID?.();
+      return adjustHarnessJob(jobId, {
+        instruction,
+        ...(requestId ? { client_request_id: requestId } : {}),
+      });
+    },
+    onMutate: () => setAdjustError(""),
+    onSuccess: (value) => {
+      queryClient.setQueryData(["harness-job", jobId], value);
+      setAdjustment("");
+      // The change lands in the timeline, so go to where it lands — including when the
+      // reader is already on the tab but scrolled back through history.
+      pinnedToEnd.current = true;
+      setDetailTab("runs");
+    },
+    onError: (requestError) => {
+      // eslint-disable-next-line no-console
+      console.error("Adjust run failed", {
+        jobId,
+        statusCode: requestError?.statusCode,
+        detail: requestError?.detail,
+        message: requestError?.message,
+      });
+      if (!handleCreditError(requestError)) {
+        setAdjustError(errorMessage(requestError));
+      }
+    },
+  });
+
+  const { mutate: extend, isPending: extending } = useMutation({
+    mutationFn: () => {
+      // The finished-run "Add scenarios" action: add `addCount` scenarios to the saved
+      // world, steered by the optional guidance typed in the box. Rerun is a separate action.
+      const guidance = adjustment.trim();
+      const requestId = window.crypto?.randomUUID?.();
+      return extendHarnessJob(jobId, {
+        count: addCount,
+        ...(guidance ? { guidance } : {}),
+        ...(requestId ? { client_request_id: requestId } : {}),
+      });
+    },
+    onMutate: () => setExtendError(""),
+    onSuccess: (value) => {
+      // The follow-up relaunches the environment (extended or replayed): the job returns
+      // to queued and this page's poll resumes.
+      queryClient.setQueryData(["harness-job", jobId], value);
+      queryClient.invalidateQueries({ queryKey: ["harness-jobs"] });
+      setAdjustment("");
+      pinnedToEnd.current = true;
+      setDetailTab("runs");
+    },
+    onError: (requestError) => {
+      // eslint-disable-next-line no-console
+      console.error("Extend environment failed", {
+        jobId,
+        statusCode: requestError?.statusCode,
+        detail: requestError?.detail,
+        message: requestError?.message,
+      });
+      if (!handleCreditError(requestError)) {
+        setExtendError(errorMessage(requestError));
+      }
     },
   });
 
@@ -669,6 +771,12 @@ export default function HarnessDetail() {
               Cancellation requested. The sandbox is stopping and cleaning up.
             </Alert>
           )}
+          <CreditExhaustionBanner
+            error={exhaustionError}
+            onUpgrade={handleUpgradeClick}
+            onDismiss={dismissCreditBanner}
+            sx={{ mt: 1.5 }}
+          />
         </Box>
 
         <Box
@@ -746,6 +854,43 @@ export default function HarnessDetail() {
               {isTerminal ? `${updatedLabel} · ` : ""}attempt{" "}
               {status?.attempt || 1}
             </Typography>
+            <Box sx={{ mt: 1.5 }}>
+              <Typography variant="caption" fontWeight={600}>
+                Consumption
+              </Typography>
+              {current.consumption == null ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 0.25 }}
+                >
+                  Usage unavailable
+                </Typography>
+              ) : (
+                <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                  {[
+                    ["Text simulation tokens", "text_sim_tokens"],
+                    ["Voice simulation minutes", "voice_sim_minutes"],
+                    ["AI credits", "ai_credits"],
+                    ["Sandbox seconds", "sandbox_seconds"],
+                  ].map(([label, key]) => (
+                    <Stack
+                      key={key}
+                      direction="row"
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="caption" color="text.secondary">
+                        {label}
+                      </Typography>
+                      <Typography variant="caption">
+                        {consumptionValue(current.consumption[key])}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Box>
             <Divider sx={{ my: 2 }} />
 
             {/* Finished stages fold away: on a completed run the full list is fifteen ticks
@@ -1375,24 +1520,40 @@ export default function HarnessDetail() {
                     multiline
                     maxRows={8}
                     placeholder={
-                      blockingReplyTo
-                        ? "Answer ALK’s question…"
-                        : "Ask ALK about this environment or tell it what to change…"
+                      chatAvailable
+                        ? blockingReplyTo
+                          ? "Answer ALK’s question…"
+                          : "Ask ALK about this environment or tell it what to change…"
+                        : isTerminal
+                          ? "Describe the scenarios to add — e.g. 'calm first-time riders booking an airport pickup' (optional)"
+                          : "Tell the run what to change…"
                     }
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
+                    value={chatAvailable ? message : adjustment}
+                    onChange={(event) =>
+                      chatAvailable
+                        ? setMessage(event.target.value)
+                        : setAdjustment(event.target.value)
+                    }
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" || event.shiftKey) return;
                       event.preventDefault();
-                      const content = message.trim();
-                      if (!content || sendingMessage) return;
-                      sendMessage({
-                        content,
-                        replyTo: blockingReplyTo,
-                        kind: blockingReplyTo
-                          ? "user_response"
-                          : "user_message",
-                      });
+                      if (chatAvailable) {
+                        const content = message.trim();
+                        if (!content || sendingMessage) return;
+                        sendMessage({
+                          content,
+                          replyTo: blockingReplyTo,
+                          kind: blockingReplyTo
+                            ? "user_response"
+                            : "user_message",
+                        });
+                      } else if (isTerminal) {
+                        if (extending) return;
+                        extend();
+                      } else {
+                        if (adjusting || !adjustment.trim()) return;
+                        adjust();
+                      }
                     }}
                     sx={{ px: 1.5, pt: 1.25, typography: "body2" }}
                   />
@@ -1403,40 +1564,138 @@ export default function HarnessDetail() {
                     sx={{ px: 1.5, pb: 1, pt: 0.5 }}
                   >
                     <Typography variant="caption" color="text.disabled">
-                      ALK answers directly and requests safe adjustments when
-                      needed
+                      {chatAvailable
+                        ? "ALK answers directly and requests safe adjustments when needed"
+                        : isTerminal
+                          ? "Adds scenarios to the saved world"
+                          : "Applied at the next stage boundary"}
                     </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const content = message.trim();
-                        if (content)
-                          sendMessage({
-                            content,
-                            replyTo: blockingReplyTo,
-                            kind: blockingReplyTo
-                              ? "user_response"
-                              : "user_message",
-                          });
-                      }}
-                      disabled={sendingMessage || !message.trim()}
-                      aria-label="Send"
-                      sx={{
-                        bgcolor: "accent.brand",
-                        color: "common.white",
-                        "&:hover": { bgcolor: "accent.brand", opacity: 0.88 },
-                        "&.Mui-disabled": {
-                          bgcolor: "action.disabledBackground",
-                          color: "text.disabled",
-                        },
-                      }}
-                    >
-                      {sendingMessage ? (
-                        <CircularProgress size={14} color="inherit" />
-                      ) : (
-                        <Iconify icon="solar:plain-linear" width={15} />
-                      )}
-                    </IconButton>
+                    {chatAvailable ? (
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          const content = message.trim();
+                          if (content)
+                            sendMessage({
+                              content,
+                              replyTo: blockingReplyTo,
+                              kind: blockingReplyTo
+                                ? "user_response"
+                                : "user_message",
+                            });
+                        }}
+                        disabled={sendingMessage || !message.trim()}
+                        aria-label="Send"
+                        sx={{
+                          bgcolor: "accent.brand",
+                          color: "common.white",
+                          "&:hover": { bgcolor: "accent.brand", opacity: 0.88 },
+                          "&.Mui-disabled": {
+                            bgcolor: "action.disabledBackground",
+                            color: "text.disabled",
+                          },
+                        }}
+                      >
+                        {sendingMessage ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <Iconify icon="solar:plain-linear" width={15} />
+                        )}
+                      </IconButton>
+                    ) : isTerminal ? (
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          sx={{
+                            border: 1,
+                            borderColor: "divider",
+                            borderRadius: 1,
+                          }}
+                        >
+                          <IconButton
+                            size="small"
+                            aria-label="Fewer scenarios"
+                            disabled={extending || addCount <= 1}
+                            onClick={() =>
+                              setAddCount((n) => Math.max(1, n - 1))
+                            }
+                          >
+                            <Iconify
+                              icon="solar:minus-square-linear"
+                              width={15}
+                            />
+                          </IconButton>
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 18, textAlign: "center" }}
+                          >
+                            {addCount}
+                          </Typography>
+                          <IconButton
+                            size="small"
+                            aria-label="More scenarios"
+                            disabled={extending || addCount >= 20}
+                            onClick={() =>
+                              setAddCount((n) => Math.min(20, n + 1))
+                            }
+                          >
+                            <Iconify
+                              icon="solar:add-square-linear"
+                              width={15}
+                            />
+                          </IconButton>
+                        </Stack>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => extend()}
+                          disabled={extending}
+                          startIcon={
+                            extending ? (
+                              <CircularProgress size={14} color="inherit" />
+                            ) : (
+                              <Iconify
+                                icon="solar:add-circle-linear"
+                                width={15}
+                              />
+                            )
+                          }
+                          sx={{
+                            bgcolor: "accent.brand",
+                            color: "common.white",
+                            "&:hover": {
+                              bgcolor: "accent.brand",
+                              opacity: 0.88,
+                            },
+                          }}
+                        >
+                          Add scenarios
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <IconButton
+                        size="small"
+                        onClick={() => adjust()}
+                        disabled={adjusting || !adjustment.trim()}
+                        aria-label="Send"
+                        sx={{
+                          bgcolor: "accent.brand",
+                          color: "common.white",
+                          "&:hover": { bgcolor: "accent.brand", opacity: 0.88 },
+                          "&.Mui-disabled": {
+                            bgcolor: "action.disabledBackground",
+                            color: "text.disabled",
+                          },
+                        }}
+                      >
+                        {adjusting ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <Iconify icon="solar:plain-linear" width={15} />
+                        )}
+                      </IconButton>
+                    )}
                   </Stack>
                 </Box>
                 {conversationError && (
@@ -1447,6 +1706,19 @@ export default function HarnessDetail() {
                     sx={{ mt: 1 }}
                   >
                     {conversationError}
+                  </Alert>
+                )}
+                {(adjustError || extendError) && (
+                  <Alert
+                    severity="error"
+                    variant="outlined"
+                    onClose={() => {
+                      setAdjustError("");
+                      setExtendError("");
+                    }}
+                    sx={{ mt: 1 }}
+                  >
+                    {adjustError || extendError}
                   </Alert>
                 )}
               </Box>
