@@ -5,6 +5,8 @@ const jobsPath = () => apiPath("/simulate/api/harness-jobs/");
 const jobPath = (id) => apiPath("/simulate/api/harness-jobs/{id}/", { id });
 const cancelPath = (id) =>
   apiPath("/simulate/api/harness-jobs/{id}/cancel/", { id });
+const adjustPath = (id) =>
+  apiPath("/simulate/api/harness-jobs/{id}/adjust/", { id });
 const preflightPath = () => apiPath("/simulate/api/harness-jobs/preflight/");
 const sourcesPath = () => apiPath("/simulate/api/harness-jobs/sources/");
 const secretFilesPath = () =>
@@ -64,6 +66,8 @@ export const storeHarnessSecretValues = async (environmentValues) =>
     })
   ).data;
 export const getHarnessJob = async (id) => (await axios.get(jobPath(id))).data;
+export const adjustHarnessJob = async (id, payload) =>
+  (await axios.post(adjustPath(id), payload)).data;
 // The contract marks this endpoint runtimeRequestValidation: true against
 // HarnessJobAction, so it must be sent an object. Posting no body at all makes the
 // validator parse `undefined`, which fails before the request ever leaves the browser.

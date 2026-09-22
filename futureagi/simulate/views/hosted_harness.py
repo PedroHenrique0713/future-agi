@@ -13,6 +13,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from simulate.authentication import HarnessAttemptAuthentication
+from simulate.serializers.harness_usage import (
+    HarnessUsageRequestSerializer,
+    HarnessUsageResponseSerializer,
+)
 from simulate.serializers.hosted_harness import (
     HarnessAcceptedResponseSerializer,
     HarnessArtifactUploadResponseSerializer,
@@ -26,6 +30,7 @@ from simulate.serializers.hosted_harness import (
     HarnessScenarioOperationResponseSerializer,
     HarnessScenarioOperationSerializer,
 )
+from simulate.services.harness_usage import check_harness_usage, record_harness_usage
 from simulate.services.hosted_harness import (
     HostedHarnessError,
     begin_scenarios,
@@ -37,11 +42,6 @@ from simulate.services.hosted_harness_ingestion import (
     ingest_manifest,
     ingest_result_receipt,
 )
-from simulate.serializers.harness_usage import (
-    HarnessUsageRequestSerializer,
-    HarnessUsageResponseSerializer,
-)
-from simulate.services.harness_usage import check_harness_usage, record_harness_usage
 from simulate.services.hosted_harness_ingress import (
     create_ingress_proxy_url,
     proxy_ingress_request,
@@ -293,6 +293,7 @@ class HostedHarnessIngressProxyView(APIView):
     )
     def patch(self, request, token, target_path=""):
         return self._proxy(request, token, target_path)
+
     delete = _proxy
     head = _proxy
     options = _proxy

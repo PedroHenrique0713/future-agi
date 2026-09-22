@@ -8,6 +8,7 @@ sandbox and provider header server-side on every request.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from django.conf import settings
 from django.core import signing
 from django.core.signing import BadSignature, SignatureExpired
 from django.http import HttpResponse
+from django.http.request import RawPostDataException
 from django.utils import timezone
 
 from simulate.models import HostedHarnessAttempt
@@ -199,10 +201,21 @@ def _request_headers(request, provider_headers) -> dict[str, str]:
     return headers
 
 
+def _request_body(request) -> bytes:
+    try:
+        return request.body
+    except RawPostDataException:
+        return json.dumps(
+            request.data,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+
 def proxy_ingress_request(request, token: str, target_path: str = "") -> HttpResponse:
     grant = _grant_from_token(token)
     attempt = _active_attempt(grant)
-    body = request.body
+    body = _request_body(request)
     if len(body) > _MAX_REQUEST_BYTES:
         return HttpResponse("request body is too large", status=413)
 
