@@ -411,6 +411,17 @@ class HarnessPreflightSerializer(HarnessJobCreateSerializer):
         write_only=True,
         help_text="Target-provider values to verify live; used for this check only.",
     )
+class HarnessJobAdjustmentSerializer(serializers.Serializer):
+    instruction = serializers.CharField(
+        min_length=1,
+        max_length=2000,
+        trim_whitespace=True,
+        help_text="A user correction to apply at the next safe harness stage boundary.",
+    )
+    client_request_id = serializers.CharField(
+        max_length=128, required=False, allow_blank=False
+    )
+
 
 
 class HarnessJobExtendSerializer(serializers.Serializer):

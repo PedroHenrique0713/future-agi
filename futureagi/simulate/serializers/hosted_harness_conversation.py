@@ -43,6 +43,17 @@ class HarnessConversationAdjustmentSerializer(serializers.Serializer):
     client_request_id = serializers.CharField(
         max_length=128, required=False, allow_blank=False
     )
+class HarnessConversationAdjustmentResponseSerializer(serializers.Serializer):
+    adjustment_id = serializers.UUIDField()
+    client_request_id = serializers.CharField(
+        allow_null=True, required=False, allow_blank=False
+    )
+    instruction = serializers.CharField()
+    target_stage = serializers.CharField()
+    scenario_delta = serializers.IntegerField()
+    status = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
 
 
 class HarnessConversationMessageSerializer(serializers.Serializer):

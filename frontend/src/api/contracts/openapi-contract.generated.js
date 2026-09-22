@@ -5,7 +5,7 @@
 export const OPENAPI_CONTRACT = Object.freeze({
   generatedFrom: "api_contracts/openapi/swagger.json",
   swaggerVersion: "2.0",
-  endpointCount: 1011,
+  endpointCount: 1014,
   endpoints: {
     "/accounts/2fa/recovery-codes/": {
       get: {
@@ -28036,6 +28036,25 @@ export const OPENAPI_CONTRACT = Object.freeze({
         },
       },
     },
+    "/simulate/api/harness/conversations/{id}/adjust/": {
+      post: {
+        operationId: "simulate_api_harness_conversations_adjust",
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessConversationAdjustment",
+        },
+        queryParameters: {},
+        responses: {
+          200: {
+            $ref: "#/definitions/HarnessConversationAdjustmentResponse",
+          },
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
     "/simulate/api/harness/conversations/{id}/commands/": {
       get: {
         operationId: "simulate_api_harness_conversations_commands",
@@ -28107,6 +28126,65 @@ export const OPENAPI_CONTRACT = Object.freeze({
         responses: {
           200: {
             $ref: "#/definitions/HarnessConversationRunStatus",
+          },
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
+    "/simulate/api/harness/conversations/{id}/session-store/": {
+      get: {
+        operationId: "simulate_api_harness_conversations_session_store",
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: false,
+        requestBody: null,
+        queryParameters: {
+          project_key: {
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 255,
+            },
+          },
+          session_id: {
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 255,
+            },
+          },
+          subpath: {
+            required: false,
+            schema: {
+              type: "string",
+              maxLength: 512,
+              default: "",
+            },
+          },
+        },
+        responses: {
+          default: {
+            $ref: "#/definitions/ManagementAPIErrorResponse",
+          },
+        },
+      },
+    },
+    "/simulate/api/harness/conversations/{id}/session-store/append/": {
+      post: {
+        operationId:
+          "simulate_api_harness_conversations_session-store_append_session_store",
+        runtimeRequestValidation: true,
+        runtimeResponseValidation: true,
+        requestBody: {
+          $ref: "#/definitions/HarnessConversationTranscriptAppend",
+        },
+        queryParameters: {},
+        responses: {
+          200: {
+            $ref: "#/definitions/HarnessConversationTranscriptAppendResponse",
           },
           default: {
             $ref: "#/definitions/ManagementAPIErrorResponse",
@@ -45191,7 +45269,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
           "x-nullable": true,
         },
@@ -45345,7 +45423,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
           "x-nullable": true,
         },
@@ -46336,7 +46414,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
         livekit_max_concurrency: {
           title: "Livekit max concurrency",
           type: "integer",
-          maximum: 25,
+          maximum: 5,
           minimum: 1,
         },
         commit_message: {
@@ -59316,6 +59394,72 @@ export const OPENAPI_CONTRACT = Object.freeze({
         },
       },
     },
+    HarnessConversationAdjustment: {
+      required: ["instruction"],
+      type: "object",
+      properties: {
+        instruction: {
+          title: "Instruction",
+          type: "string",
+          maxLength: 2000,
+          minLength: 1,
+        },
+        client_request_id: {
+          title: "Client request id",
+          type: "string",
+          maxLength: 128,
+          minLength: 1,
+        },
+      },
+    },
+    HarnessConversationAdjustmentResponse: {
+      required: [
+        "adjustment_id",
+        "instruction",
+        "target_stage",
+        "scenario_delta",
+        "status",
+        "created_at",
+      ],
+      type: "object",
+      properties: {
+        adjustment_id: {
+          title: "Adjustment id",
+          type: "string",
+          format: "uuid",
+        },
+        client_request_id: {
+          title: "Client request id",
+          type: "string",
+          minLength: 1,
+          "x-nullable": true,
+        },
+        instruction: {
+          title: "Instruction",
+          type: "string",
+          minLength: 1,
+        },
+        target_stage: {
+          title: "Target stage",
+          type: "string",
+          minLength: 1,
+        },
+        scenario_delta: {
+          title: "Scenario delta",
+          type: "integer",
+        },
+        status: {
+          title: "Status",
+          type: "string",
+          minLength: 1,
+        },
+        created_at: {
+          title: "Created at",
+          type: "string",
+          format: "date-time",
+        },
+      },
+    },
     HarnessConversationEventAck: {
       required: ["acked_through_sequence"],
       type: "object",
@@ -59508,6 +59652,49 @@ export const OPENAPI_CONTRACT = Object.freeze({
         receipts: {
           title: "Receipts",
           type: "object",
+        },
+      },
+    },
+    HarnessConversationTranscriptAppend: {
+      required: ["project_key", "session_id", "entries"],
+      type: "object",
+      properties: {
+        project_key: {
+          title: "Project key",
+          type: "string",
+          maxLength: 255,
+          minLength: 1,
+        },
+        session_id: {
+          title: "Session id",
+          type: "string",
+          maxLength: 255,
+          minLength: 1,
+        },
+        subpath: {
+          title: "Subpath",
+          type: "string",
+          default: "",
+          maxLength: 512,
+        },
+        entries: {
+          type: "array",
+          items: {
+            type: "object",
+          },
+          maxItems: 500,
+          minItems: 1,
+        },
+      },
+    },
+    HarnessConversationTranscriptAppendResponse: {
+      required: ["appended"],
+      type: "object",
+      properties: {
+        appended: {
+          title: "Appended",
+          type: "integer",
+          minimum: 0,
         },
       },
     },
@@ -86320,6 +86507,7 @@ export const OPENAPI_CONTRACT = Object.freeze({
             "assistant_delta",
             "assistant_message",
             "stage_changed",
+            "authoring_activity",
             "tool_started",
             "tool_result",
             "question_requested",

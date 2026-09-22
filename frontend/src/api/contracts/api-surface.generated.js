@@ -5,7 +5,7 @@
 export const API_SURFACE_CONTRACT = Object.freeze({
   generatedFrom: "api_contracts/openapi/swagger.json",
   swaggerVersion: "2.0",
-  endpointCount: 1011,
+  endpointCount: 1014,
   groups: {
     accounts: {
       "/accounts/2fa/recovery-codes/": ["get"],
@@ -862,10 +862,15 @@ export const API_SURFACE_CONTRACT = Object.freeze({
       "/simulate/api/harness/attempts/{id}/ingress/": ["post"],
       "/simulate/api/harness/attempts/{id}/results/": ["post"],
       "/simulate/api/harness/attempts/{id}/scenarios/": ["post"],
+      "/simulate/api/harness/conversations/{id}/adjust/": ["post"],
       "/simulate/api/harness/conversations/{id}/commands/": ["get"],
       "/simulate/api/harness/conversations/{id}/events/": ["post"],
       "/simulate/api/harness/conversations/{id}/rerun/": ["post"],
       "/simulate/api/harness/conversations/{id}/run-status/": ["get"],
+      "/simulate/api/harness/conversations/{id}/session-store/": ["get"],
+      "/simulate/api/harness/conversations/{id}/session-store/append/": [
+        "post",
+      ],
       "/simulate/api/harness/conversations/{id}/workspace/": ["put"],
       "/simulate/api/livekit/call-config/{call_id}/": ["get"],
       "/simulate/api/livekit/call-execution/{call_id}/": ["patch"],
@@ -2052,10 +2057,13 @@ export const API_SURFACE_PATHS = Object.freeze({
   "/simulate/api/harness/attempts/{id}/ingress/": ["post"],
   "/simulate/api/harness/attempts/{id}/results/": ["post"],
   "/simulate/api/harness/attempts/{id}/scenarios/": ["post"],
+  "/simulate/api/harness/conversations/{id}/adjust/": ["post"],
   "/simulate/api/harness/conversations/{id}/commands/": ["get"],
   "/simulate/api/harness/conversations/{id}/events/": ["post"],
   "/simulate/api/harness/conversations/{id}/rerun/": ["post"],
   "/simulate/api/harness/conversations/{id}/run-status/": ["get"],
+  "/simulate/api/harness/conversations/{id}/session-store/": ["get"],
+  "/simulate/api/harness/conversations/{id}/session-store/append/": ["post"],
   "/simulate/api/harness/conversations/{id}/workspace/": ["put"],
   "/simulate/api/livekit/call-config/{call_id}/": ["get"],
   "/simulate/api/livekit/call-execution/{call_id}/": ["patch"],

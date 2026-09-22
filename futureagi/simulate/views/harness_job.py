@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from simulate.serializers.harness_job import (
     HarnessJobActionSerializer,
+    HarnessJobAdjustmentSerializer,
     HarnessJobCreateSerializer,
     HarnessJobExtendSerializer,
     HarnessJobReadSerializer,
@@ -268,6 +269,14 @@ class HarnessJobViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         return get_harness_provider().cancel(request, pk)
+
+    @validated_request(
+        request_serializer=HarnessJobAdjustmentSerializer,
+        reject_unknown_fields=True,
+    )
+    @action(detail=True, methods=["post"])
+    def adjust(self, request, pk=None):
+        return get_harness_provider().adjust(request, pk)
 
     @validated_request(
         request_serializer=HarnessJobExtendSerializer,

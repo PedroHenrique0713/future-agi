@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from simulate.authentication import HarnessConversationAuthentication
 from simulate.serializers.hosted_harness_conversation import (
+    HarnessConversationAdjustmentResponseSerializer,
     HarnessConversationAdjustmentSerializer,
     HarnessConversationCommandQuerySerializer,
     HarnessConversationEventAckSerializer,
@@ -96,7 +97,7 @@ class HostedHarnessConversationViewSet(viewsets.ViewSet):
 
     @validated_request(
         request_serializer=HarnessConversationAdjustmentSerializer,
-        responses={200: openapi.Schema(type=openapi.TYPE_OBJECT)},
+        responses={200: HarnessConversationAdjustmentResponseSerializer},
         reject_unknown_fields=True,
     )
     @action(detail=True, methods=["post"])
