@@ -655,6 +655,22 @@ class HostedHarnessProvider:
                 )
         job.refresh_from_db()
         return Response(serialize_job(job))
+    def adjust(self, request, pk) -> Response:
+        from simulate.services.hosted_harness import HostedHarnessError
+        from simulate.services.hosted_harness_gateway import HostedHarnessGateway
+
+        job = self._job(request, pk)
+        if job is None:
+            return Response(
+                {"detail": "Hosted harness job not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            job = HostedHarnessGateway().adjust(job, request.validated_data)
+        except HostedHarnessError as exc:
+            return Response(exc.as_dict(), status=exc.status_code)
+        return Response(serialize_job(job))
+
 
     def send_message(self, request, pk) -> Response:
         from simulate.services.hosted_harness import HostedHarnessError
