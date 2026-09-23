@@ -22890,6 +22890,11 @@ export interface TrendPointApi {
 
 export interface FeedListRowApi {
   /** @minLength 1 */
+  severity_assessment_status?: string;
+  /** @minLength 1 */
+  severity_source?: string;
+  severity_reason?: string;
+  /** @minLength 1 */
   cluster_id: string;
   /** @minLength 1 */
   source: string;
@@ -23431,6 +23436,774 @@ export interface TriggerAnalysisApi {
   trace_id: string;
   project_id: string;
   widgets: WidgetAnalysisApi[];
+}
+
+export type UpdateInvestigationAttemptRequestApiAction =
+  (typeof UpdateInvestigationAttemptRequestApiAction)[keyof typeof UpdateInvestigationAttemptRequestApiAction];
+
+export const UpdateInvestigationAttemptRequestApiAction = {
+  renew: "renew",
+  cancel: "cancel",
+} as const;
+
+export interface UpdateInvestigationAttemptRequestApi {
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  job_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  action: UpdateInvestigationAttemptRequestApiAction;
+  /** @maxLength 2000 */
+  reason?: string;
+}
+
+export interface UpdateInvestigationAttemptResponseApi {
+  attempt_id: string;
+  /** @minLength 1 */
+  status: string;
+  lease_expires_at: string;
+  cancellation_requested: boolean;
+  /** @minLength 1 */
+  job_state: string;
+}
+
+export type InvestigationControlErrorApiType =
+  (typeof InvestigationControlErrorApiType)[keyof typeof InvestigationControlErrorApiType];
+
+export const InvestigationControlErrorApiType = {
+  validation_error: "validation_error",
+  authentication_error: "authentication_error",
+  payment_required: "payment_required",
+  entitlement_error: "entitlement_error",
+  permission_error: "permission_error",
+  not_found: "not_found",
+  conflict: "conflict",
+  client_error: "client_error",
+  rate_limit: "rate_limit",
+  server_error: "server_error",
+  service_unavailable: "service_unavailable",
+  timeout: "timeout",
+  api_error: "api_error",
+} as const;
+
+export type InvestigationControlErrorApiDetails = { [key: string]: string[] };
+
+export interface InvestigationControlErrorApi {
+  status?: boolean;
+  type?: InvestigationControlErrorApiType;
+  /** @minLength 1 */
+  code: string;
+  /** @minLength 1 */
+  detail: string;
+  result?: string;
+  message?: string;
+  error?: string;
+  attr?: string;
+  details?: InvestigationControlErrorApiDetails;
+}
+
+export interface ClaimInvestigationsRequestApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  worker_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 20
+   */
+  engine_version: string;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  limit: number;
+}
+
+export interface InvestigationMemoryEntryApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  id: string;
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  text: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  source_feedback_id?: string;
+}
+
+export interface InvestigationMemoryApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  snapshot_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 71
+   */
+  digest: string;
+  entries: InvestigationMemoryEntryApi[];
+}
+
+export interface InvestigationLimitsApi {
+  /** @minimum 1 */
+  deadline_seconds: number;
+  /** @minimum 1 */
+  max_model_calls: number;
+  /** @minimum 0 */
+  max_children: number;
+  /** @minimum 0 */
+  max_parallel_children: number;
+  /** @minimum 1 */
+  max_input_tokens_total: number;
+  /** @minimum 1 */
+  max_output_tokens_total: number;
+  /** @minimum 1 */
+  max_evidence_bytes: number;
+  /** @minimum 1 */
+  max_tool_result_bytes: number;
+}
+
+export interface InvestigationClaimApi {
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  job_id: string;
+  trace_id: string;
+  /** @minimum 1 */
+  generation: number;
+  attempt_id: string;
+  /** @minLength 1 */
+  lease_token: string;
+  lease_expires_at: string;
+  read_cutoff: string;
+  /**
+   * @minLength 1
+   * @maxLength 20
+   */
+  engine_version: string;
+  /** @minLength 1 */
+  contract_version: string;
+  memory: InvestigationMemoryApi;
+  limits: InvestigationLimitsApi;
+  verification_capabilities: string[];
+  feature_enabled: boolean;
+}
+
+export interface ClaimInvestigationsResponseApi {
+  claims: InvestigationClaimApi[];
+}
+
+export type UpdateGroupingAttemptApiAction =
+  (typeof UpdateGroupingAttemptApiAction)[keyof typeof UpdateGroupingAttemptApiAction];
+
+export const UpdateGroupingAttemptApiAction = {
+  renew: "renew",
+  cancel: "cancel",
+} as const;
+
+export interface UpdateGroupingAttemptApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  action: UpdateGroupingAttemptApiAction;
+}
+
+export interface GroupingControlResponseApi {
+  /** @minLength 1 */
+  state?: string;
+  /** @minLength 1 */
+  status?: string;
+  checkpoint_revision?: number;
+  receipt_id?: string;
+}
+
+export type GroupingErrorApiType =
+  (typeof GroupingErrorApiType)[keyof typeof GroupingErrorApiType];
+
+export const GroupingErrorApiType = {
+  validation_error: "validation_error",
+  authentication_error: "authentication_error",
+  payment_required: "payment_required",
+  entitlement_error: "entitlement_error",
+  permission_error: "permission_error",
+  not_found: "not_found",
+  conflict: "conflict",
+  client_error: "client_error",
+  rate_limit: "rate_limit",
+  server_error: "server_error",
+  service_unavailable: "service_unavailable",
+  timeout: "timeout",
+  api_error: "api_error",
+} as const;
+
+export type GroupingErrorApiDetails = { [key: string]: string[] };
+
+export interface GroupingErrorApi {
+  status?: boolean;
+  type?: GroupingErrorApiType;
+  /** @minLength 1 */
+  code: string;
+  /** @minLength 1 */
+  detail: string;
+  result?: string;
+  message?: string;
+  error?: string;
+  attr?: string;
+  details?: GroupingErrorApiDetails;
+}
+
+export type GroupingCheckpointApiCheckpoint = { [key: string]: unknown };
+
+export interface GroupingCheckpointApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  /** @minimum 0 */
+  expected_revision: number;
+  checkpoint: GroupingCheckpointApiCheckpoint;
+}
+
+export type PublishGroupingApiCommandsItem = { [key: string]: unknown };
+
+export interface PublishGroupingApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  idempotency_key: string;
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[a-f0-9]{64}$
+   */
+  snapshot_digest: string;
+  /** @minimum 0 */
+  registry_revision: number;
+  /** @maxItems 1000 */
+  commands: PublishGroupingApiCommandsItem[];
+  /** @maxItems 100 */
+  receipt_ids: string[];
+}
+
+export interface GroupingRepairIntentApi {
+  /**
+   * @minLength 1
+   * @pattern ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$
+   */
+  primary_receipt_id: string;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  group_index: number;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  missing_own_report_ids: string[];
+}
+
+export interface ReserveGroupingCallApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  request_key: string;
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[a-f0-9]{64}$
+   */
+  request_digest: string;
+  max_cost_usd: string;
+  repair_intent?: GroupingRepairIntentApi;
+}
+
+export type SettleGroupingCallApiStatus =
+  (typeof SettleGroupingCallApiStatus)[keyof typeof SettleGroupingCallApiStatus];
+
+export const SettleGroupingCallApiStatus = {
+  settled: "settled",
+  unknown: "unknown",
+} as const;
+
+export type SettleGroupingCallApiResult = { [key: string]: unknown };
+
+export interface SettleGroupingCallApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  request_key: string;
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[a-f0-9]{64}$
+   */
+  request_digest: string;
+  status: SettleGroupingCallApiStatus;
+  result?: SettleGroupingCallApiResult;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  model_used?: string;
+  /** @minimum 0 */
+  input_tokens?: number;
+  /** @minimum 0 */
+  output_tokens?: number;
+  cost_usd?: string;
+  /** @maxLength 100 */
+  failure_code?: string;
+}
+
+export interface ClaimGroupingRequestApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  worker_id: string;
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
+  limit: number;
+}
+
+export type GroupingClaimsResponseApiClaimsItem = { [key: string]: unknown };
+
+export interface GroupingClaimsResponseApi {
+  claims: GroupingClaimsResponseApiClaimsItem[];
+}
+
+export type RenewGroupingFeatureApiAction =
+  (typeof RenewGroupingFeatureApiAction)[keyof typeof RenewGroupingFeatureApiAction];
+
+export const RenewGroupingFeatureApiAction = {
+  renew: "renew",
+} as const;
+
+export interface RenewGroupingFeatureApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  action: RenewGroupingFeatureApiAction;
+}
+
+export type CompleteGroupingFeatureApiStatus =
+  (typeof CompleteGroupingFeatureApiStatus)[keyof typeof CompleteGroupingFeatureApiStatus];
+
+export const CompleteGroupingFeatureApiStatus = {
+  ready: "ready",
+  failed: "failed",
+} as const;
+
+export type CompleteGroupingFeatureApiFeaturesItem = { [key: string]: unknown };
+
+export interface CompleteGroupingFeatureApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  status: CompleteGroupingFeatureApiStatus;
+  /** @maxItems 200 */
+  features: CompleteGroupingFeatureApiFeaturesItem[];
+  /** @maxLength 100 */
+  error_code?: string;
+}
+
+export interface GroupingOutboxRequestApi {
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+}
+
+export type GroupingOutboxResponseApiEventsItem = { [key: string]: unknown };
+
+export interface GroupingOutboxResponseApi {
+  events: GroupingOutboxResponseApiEventsItem[];
+}
+
+export interface GroupingOutboxAckApi {
+  [key: string]: unknown;
+}
+
+export interface PublishSeverityApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  receipt_id: string;
+}
+
+export type TraceAvailableDeliveryApiTopic =
+  (typeof TraceAvailableDeliveryApiTopic)[keyof typeof TraceAvailableDeliveryApiTopic];
+
+export const TraceAvailableDeliveryApiTopic = {
+  "error-feedtrace-availablev1": "error-feed.trace-available.v1",
+} as const;
+
+export type TraceAvailableEventApiEventKind =
+  (typeof TraceAvailableEventApiEventKind)[keyof typeof TraceAvailableEventApiEventKind];
+
+export const TraceAvailableEventApiEventKind = {
+  root_span_written: "root_span_written",
+} as const;
+
+export interface TraceAvailableItemApi {
+  trace_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  root_span_id: string;
+  root_end_time: string;
+}
+
+export interface TraceAvailableEventApi {
+  /**
+   * @minimum 1
+   * @maximum 1
+   */
+  version: number;
+  event_id: string;
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  event_kind: TraceAvailableEventApiEventKind;
+  traces: TraceAvailableItemApi[];
+  emitted_at: string;
+}
+
+export interface TraceAvailableDeliveryApi {
+  topic: TraceAvailableDeliveryApiTopic;
+  /** @minimum 0 */
+  partition: number;
+  /** @minimum 0 */
+  offset: number;
+  value: TraceAvailableEventApi;
+}
+
+export interface RecordTraceNotificationsRequestApi {
+  deliveries: TraceAvailableDeliveryApi[];
+}
+
+export interface PendingInvestigationApi {
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  trace_id: string;
+  job_id: string;
+  /** @minimum 1 */
+  generation: number;
+  /** @minLength 1 */
+  state: string;
+  not_before: string;
+}
+
+export interface RecordTraceNotificationsResponseApi {
+  /** @minimum 0 */
+  accepted_events: number;
+  /** @minimum 0 */
+  duplicate_events: number;
+  pending: PendingInvestigationApi[];
+}
+
+export type InvestigationResultApiContractVersion =
+  (typeof InvestigationResultApiContractVersion)[keyof typeof InvestigationResultApiContractVersion];
+
+export const InvestigationResultApiContractVersion = {
+  "omega-investigation/v1": "omega-investigation/v1",
+} as const;
+
+export type InvestigationResultApiExecutionStatus =
+  (typeof InvestigationResultApiExecutionStatus)[keyof typeof InvestigationResultApiExecutionStatus];
+
+export const InvestigationResultApiExecutionStatus = {
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export type InvestigationResultApiOutcome =
+  (typeof InvestigationResultApiOutcome)[keyof typeof InvestigationResultApiOutcome];
+
+export const InvestigationResultApiOutcome = {
+  success: "success",
+  failure: "failure",
+  unknown: "unknown",
+} as const;
+
+export type FindingAttributionRoleApiStatus =
+  (typeof FindingAttributionRoleApiStatus)[keyof typeof FindingAttributionRoleApiStatus];
+
+export const FindingAttributionRoleApiStatus = {
+  supported: "supported",
+  unsupported: "unsupported",
+  unknown: "unknown",
+} as const;
+
+export interface FindingAttributionRoleApi {
+  status: FindingAttributionRoleApiStatus;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  span_id?: string;
+  /** @maxItems 100 */
+  evidence_ids: string[];
+  /** @maxLength 600 */
+  explanation?: string;
+}
+
+export interface FindingAttributionApi {
+  origin: FindingAttributionRoleApi;
+  decisive: FindingAttributionRoleApi;
+  symptom: FindingAttributionRoleApi;
+}
+
+export interface InvestigationFindingApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  finding_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  kind: string;
+  /**
+   * @minLength 1
+   * @maxLength 8000
+   */
+  statement: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  requirement_id?: string;
+  /** @maxItems 100 */
+  evidence_ids: string[];
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  recovery: string;
+  attribution: FindingAttributionApi;
+}
+
+export interface InvestigationRequirementCheckApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  requirement_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 8000
+   */
+  requirement: string;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  status: string;
+  /** @maxItems 100 */
+  evidence_ids: string[];
+}
+
+export interface InvestigationEvidenceReceiptApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  evidence_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  span_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  parent_span_id?: string;
+  /**
+   * @minLength 1
+   * @maxLength 8000
+   */
+  excerpt: string;
+  end_time?: string;
+}
+
+export interface InvestigationVerificationReceiptApi {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  receipt_id: string;
+  executed: boolean;
+}
+
+export interface InvestigationCoverageApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  scope: string;
+  /** @minimum 0 */
+  observed_span_count: number;
+  read_complete: boolean;
+  future_arrivals_known: boolean;
+}
+
+export interface InvestigationUsageApi {
+  /** @minimum 0 */
+  model_calls: number;
+  /** @minimum 0 */
+  input_tokens: number;
+  /** @minimum 0 */
+  output_tokens: number;
+  /** @minimum 0 */
+  cost_usd?: number;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  cost_status: string;
+}
+
+export type GatewayAccountingApiRaw = { [key: string]: unknown };
+
+export interface GatewayAccountingApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  request_id?: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  model_used: string;
+  /** @minimum 0 */
+  cost: number;
+  /** @minimum 0 */
+  input_tokens?: number;
+  /** @minimum 0 */
+  output_tokens?: number;
+  raw?: GatewayAccountingApiRaw;
+}
+
+export interface InvestigationResultApi {
+  contract_version: InvestigationResultApiContractVersion;
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  job_id: string;
+  /** @minimum 1 */
+  generation: number;
+  attempt_id: string;
+  trace_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 20
+   */
+  engine_version: string;
+  read_cutoff: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  memory_snapshot_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 71
+   */
+  memory_digest: string;
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[a-f0-9]{64}$
+   */
+  evidence_digest: string;
+  execution_status: InvestigationResultApiExecutionStatus;
+  outcome: InvestigationResultApiOutcome;
+  findings: InvestigationFindingApi[];
+  requirement_checks: InvestigationRequirementCheckApi[];
+  evidence_receipts: InvestigationEvidenceReceiptApi[];
+  verification_receipts: InvestigationVerificationReceiptApi[];
+  coverage: InvestigationCoverageApi;
+  usage: InvestigationUsageApi;
+  gateway_accounting: GatewayAccountingApi[];
+  /**
+   * @minLength 1
+   * @pattern ^sha256:[a-f0-9]{64}$
+   */
+  result_digest: string;
+}
+
+export interface PublishInvestigationRequestApi {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  idempotency_key: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  lease_token: string;
+  result: InvestigationResultApi;
+}
+
+export type PublishInvestigationResponseApiStatus =
+  (typeof PublishInvestigationResponseApiStatus)[keyof typeof PublishInvestigationResponseApiStatus];
+
+export const PublishInvestigationResponseApiStatus = {
+  accepted: "accepted",
+  duplicate: "duplicate",
+} as const;
+
+export interface PublishInvestigationResponseApi {
+  status: PublishInvestigationResponseApiStatus;
+  report_id: string;
+  occurrence_ids: string[];
+  /** @minLength 1 */
+  grouping_status: string;
 }
 
 export type ObservabilityProviderApiProvider =
