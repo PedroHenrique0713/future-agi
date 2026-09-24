@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('accounts', '0024_sosloginproxy'),
-        ('tracer', '0096_repair_scanner_cluster_error_count'),
+        ('tracer', '0107_investigation_attribution_explanation'),
     ]
 
     operations = [
